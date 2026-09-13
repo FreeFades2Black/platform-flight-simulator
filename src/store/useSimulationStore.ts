@@ -1,315 +1,761 @@
 import { create } from 'zustand';
-import { SimulationState, MissionId } from '../types/simulation';
+import { SimulationState, FailureScenarioId, FailureCategory, FailureScenarioInfo } from '../types/simulation';
 
-const MISSION_METADATA: Record<MissionId, { title: string; desc: string }> = {
-  'mission-01': {
-    title: 'Mission 01: The Wire Trap (MTU Misclamp)',
-    desc: 'CNI overlay MTU is set to 1500, but VXLAN adds 50B encapsulation. High-throughput telemetry batches exceed the path MTU and freeze at the bridge with DF (Don\'t Fragment) set.',
+export const SCENARIOS: Record<FailureScenarioId, FailureScenarioInfo> = {
+  nominal: {
+    id: 'nominal',
+    category: 'nominal',
+    componentName: 'Full Pipeline',
+    componentType: 'node',
+    title: 'System Nominal: End-to-End Healthy Stream',
+    errorSignature: 'NONE (100% Ingestion SLA Reconciled)',
+    description: 'All 5 nodes and 4 interconnecting pipelines are operating within nominal thresholds. Zero packet drops, un-throttled NVMe I/O, and clean cgroup memory allocations.',
+    suggestedCommands: ['tcpdump -nnvv -i eth0', 'dmesg -T', 'kubectl describe pod kafka-broker-0', 'df -h'],
+    remediationCommand: 'N/A (Healthy)',
   },
-  'mission-02': {
-    title: 'Mission 02: The Invisible Reaper (Netty Off-Heap OOM)',
-    desc: 'High connection concurrency drives Netty direct memory buffers beyond the 8GiB Linux cgroup hard ceiling. The kernel OOM-killer terminates the pod with Exit Code 137.',
+
+  // Node 1: Edge Telemetry
+  'node1-buffer-exhaustion': {
+    id: 'node1-buffer-exhaustion',
+    category: 'node-1',
+    componentName: 'Node 1: EDGE TELEMETRY',
+    componentType: 'node',
+    title: 'Local Buffer Ring Exhaustion',
+    errorSignature: 'BufferOverflowException: queue full (10000/10000 events)',
+    description: 'The edge forwarder memory queue fills completely because downstream network dispatch is blocked. Agent drops 42,100 high-frequency sensor records due to backpressure exhaustion.',
+    suggestedCommands: ['cat /var/log/edge-agent.log', 'iot-agent status', 'iot-agent flush-buffer'],
+    remediationCommand: 'iot-agent flush-buffer',
   },
-  'mission-03': {
-    title: 'Mission 03: The Frozen Disk (Stale CSI VolumeAttachment)',
-    desc: 'Node B crashes ungracefully while holding an exclusive cloud disk lock. The replacement pod on Node C hangs indefinitely in ContainerCreating with Multi-Attach error.',
+  'node1-schema-violation': {
+    id: 'node1-schema-violation',
+    category: 'node-1',
+    componentName: 'Node 1: EDGE TELEMETRY',
+    componentType: 'node',
+    title: 'Serialization Schema Registry Violation',
+    errorSignature: 'SchemaNotFoundException: failed to fetch schema ID 412',
+    description: 'Forwarder attempts to serialize telemetry records that do not match the expected Schema Registry definition (AvroTypeException: Expected field "thermal_c" not found).',
+    suggestedCommands: ['curl -s http://schema-registry:8081/subjects', 'iot-agent schema-check', 'iot-agent reload-schema'],
+    remediationCommand: 'iot-agent reload-schema',
   },
-  'mission-04': {
-    title: 'Mission 04: The Zombie Finalizer (Orphaned Operator)',
-    desc: 'The operator CRD was removed before the managed Kafka cluster finished teardown. The pod stays locked in Terminating forever due to dangling metadata.finalizers.',
+
+  // Pipeline 1: Edge to Ingress
+  'pipe1-tls-handshake': {
+    id: 'pipe1-tls-handshake',
+    category: 'pipe-1',
+    componentName: 'Pipeline 1 → 2: EDGE to INGRESS',
+    componentType: 'pipeline',
+    title: 'Mutual TLS Handshake & Cert Expiration',
+    errorSignature: 'SSLHandshakeException: PKIX path building failed: unable to find valid certification path',
+    description: 'Mutual TLS (mTLS) fails between the edge collector and perimeter load balancer due to an expired root CA or untrusted intermediate cert (sslv3 alert handshake failure).',
+    suggestedCommands: ['openssl s_client -connect ingress.lakehouse.local:9092', 'curl -Iv https://ingress.lakehouse.local:9092', 'renew-cert'],
+    remediationCommand: 'renew-cert',
+  },
+  'pipe1-nlb-syn-flood': {
+    id: 'pipe1-nlb-syn-flood',
+    category: 'pipe-1',
+    componentName: 'Pipeline 1 → 2: EDGE to INGRESS',
+    componentType: 'pipeline',
+    title: 'L4 NLB Connection Throttling (SYN Flood / Exhaustion)',
+    errorSignature: 'TCP: request_sock_TCP: Possible SYN flooding on port 9092. Sending cookies.',
+    description: 'Edge gateways generate thousands of concurrent reconnect bursts, saturating the Ingress NLB connection tracking table and triggering kernel SYN cookies and client timeouts.',
+    suggestedCommands: ['netstat -s | grep -i listen', 'dmesg -T | grep -i syn', 'tune-syn-backlog'],
+    remediationCommand: 'tune-syn-backlog',
+  },
+
+  // Node 2: Gateway Ingress
+  'node2-coredns-nxdomain': {
+    id: 'node2-coredns-nxdomain',
+    category: 'node-2',
+    componentName: 'Node 2: GATEWAY INGRESS',
+    componentType: 'node',
+    title: 'CoreDNS Internal Service Resolution Failure',
+    errorSignature: 'dial tcp: lookup kafka-broker-0 on 10.96.0.10:53: no such host (NXDOMAIN)',
+    description: 'The Ingress controller cannot resolve internal headless cluster Service names for downstream Kafka broker endpoints due to CoreDNS pod crash or upstream packet drops.',
+    suggestedCommands: ['dig kafka-broker-0.kafka-headless.svc.cluster.local @10.96.0.10', 'kubectl logs -n kube-system -l k8s-app=kube-dns', 'restart-coredns'],
+    remediationCommand: 'restart-coredns',
+  },
+  'node2-target-503': {
+    id: 'node2-target-503',
+    category: 'node-2',
+    componentName: 'Node 2: GATEWAY INGRESS',
+    componentType: 'node',
+    title: 'Target Group Backend Health Check Failure',
+    errorSignature: '503 Service Temporarily Unavailable: no healthy upstream',
+    description: 'The Ingress controller marks downstream broker pods as dead after continuous health check probe timeouts (Readiness probe failed with statuscode: 500).',
+    suggestedCommands: ['kubectl describe ingress lakehouse-ingress', 'kubectl get endpoints kafka-headless', 'restart-broker'],
+    remediationCommand: 'restart-broker',
+  },
+
+  // Pipeline 2: Ingress to Overlay
+  'pipe2-mtu-blackhole': {
+    id: 'pipe2-mtu-blackhole',
+    category: 'pipe-2',
+    componentName: 'Pipeline 2 → 3: INGRESS to CNI WIRE',
+    componentType: 'pipeline',
+    title: 'Path MTU Black Hole (Overlay Encapsulation)',
+    errorSignature: 'ICMP 3, 4: Destination Unreachable (Fragmentation Needed and DF set)',
+    description: 'Physical interface is 1500B. Payload (1460B) + TCP/IP (40B) + VXLAN overlay header (50B) = 1550B total wire size with DF bit set. Packets silently drop at the bridge.',
+    suggestedCommands: ['tcpdump -nnvv -i eth0', 'ip link show flannel.1', 'fix-mtu'],
+    remediationCommand: 'fix-mtu',
+  },
+  'pipe2-netpol-block': {
+    id: 'pipe2-netpol-block',
+    category: 'pipe-2',
+    componentName: 'Pipeline 2 → 3: INGRESS to CNI WIRE',
+    componentType: 'pipeline',
+    title: 'Zero-Trust NetworkPolicy Ingress Block',
+    errorSignature: 'packet dropped by policy "deny-all-ingress": TCP port 9092 not permitted',
+    description: 'A newly committed NetworkPolicy omitted an explicit ingress allow rule for the Kafka 9092 listener. Packets crossing the CNI veth pair are rejected with silent timeouts.',
+    suggestedCommands: ['kubectl get netpol -n lakehouse-infra', 'kubectl describe netpol deny-all-ingress', 'allow-netpol'],
+    remediationCommand: 'allow-netpol',
+  },
+
+  // Node 3: CNI Overlay Wire
+  'node3-conntrack-saturation': {
+    id: 'node3-conntrack-saturation',
+    category: 'node-3',
+    componentName: 'Node 3: CNI OVERLAY WIRE',
+    componentType: 'node',
+    title: 'Linux Netfilter Conntrack Table Saturation',
+    errorSignature: 'dmesg: nf_conntrack: table full, dropping packet',
+    description: 'Thousands of rapid short-lived telemetry TCP connections exhaust the Linux kernel connection tracking state table (max 262,144 entries). New connections are immediately dropped.',
+    suggestedCommands: ['conntrack -S', 'dmesg -T | grep -i conntrack', 'flush-conntrack'],
+    remediationCommand: 'flush-conntrack',
+  },
+  'node3-ring-overflow': {
+    id: 'node3-ring-overflow',
+    category: 'node-3',
+    componentName: 'Node 3: CNI OVERLAY WIRE',
+    componentType: 'node',
+    title: 'Socket Buffer Ring Overflow (rx_dropped)',
+    errorSignature: 'flannel.1: RX dropped: 128,492 (NETDEV WATCHDOG: transmit queue timed out)',
+    description: 'Virtual network interface socket ring buffer cannot dump packets to the CPU fast enough under high burst velocity, resulting in heavy kernel RX drop counts.',
+    suggestedCommands: ['ethtool -S flannel.1', 'ifconfig flannel.1', 'tune-ring-buffer'],
+    remediationCommand: 'tune-ring-buffer',
+  },
+
+  // Pipeline 3: Overlay to Broker
+  'pipe3-direct-byte-buffer': {
+    id: 'pipe3-direct-byte-buffer',
+    category: 'pipe-3',
+    componentName: 'Pipeline 3 → 4: CNI WIRE to KAFKA BROKER',
+    componentType: 'pipeline',
+    title: 'DirectByteBuffer Native Memory Allocation Stall',
+    errorSignature: 'java.lang.OutOfMemoryError: Direct buffer memory (SocketChannel.read() failed)',
+    description: 'The JVM runs out of off-heap direct buffer memory when allocating incoming network socket read buffers under high connection pressure.',
+    suggestedCommands: ['jcmd 1 VM.native_memory baseline', 'kubectl logs kafka-broker-0', 'tune-direct-memory'],
+    remediationCommand: 'tune-direct-memory',
+  },
+  'pipe3-sasl-auth': {
+    id: 'pipe3-sasl-auth',
+    category: 'pipe-3',
+    componentName: 'Pipeline 3 → 4: CNI WIRE to KAFKA BROKER',
+    componentType: 'pipeline',
+    title: 'Broker SSL/SASL SCRAM Authentication Rejection',
+    errorSignature: 'SaslAuthenticationException: Failed to configure SASL client: Client unable to authenticate',
+    description: 'The Kafka broker TLS/SASL listener rejects incoming client credentials due to mismatched SCRAM-SHA-512 secrets or expired ACL credentials.',
+    suggestedCommands: ['kubectl get secret kafka-jaas-secret -o yaml', 'crictl logs kafka-broker-0', 'rotate-sasl'],
+    remediationCommand: 'rotate-sasl',
+  },
+
+  // Node 4: Kafka Broker
+  'node4-cgroup-oom': {
+    id: 'node4-cgroup-oom',
+    category: 'node-4',
+    componentName: 'Node 4: KAFKA-BROKER-0',
+    componentType: 'node',
+    title: 'cgroup v2 Hard Ceiling Breach (The OOM Reaper)',
+    errorSignature: 'dmesg: Memory cgroup out of memory: Kill process 28412 (java) score 982 -> Exit Code 137',
+    description: 'Combined memory (4096MB JVM Heap + 4350MB Netty direct buffers) exceeds the 8192MB Linux cgroup hard limit. The kernel OOM-killer sends SIGKILL (Signal 9).',
+    suggestedCommands: ['dmesg -T | grep -i oom', 'kubectl describe pod kafka-broker-0', 'resolve-oom'],
+    remediationCommand: 'resolve-oom',
+  },
+  'node4-under-replicated': {
+    id: 'node4-under-replicated',
+    category: 'node-4',
+    componentName: 'Node 4: KAFKA-BROKER-0',
+    componentType: 'node',
+    title: 'Under-Replicated Partitions (ISR Quorum Collapse)',
+    errorSignature: 'UnderReplicatedPartitions > 0: In-sync replicas (1) is less than configured minimum (2)',
+    description: 'Disk write bottlenecks cause follower broker replicas to fall behind the high-water mark, dropping out of the In-Sync Replicas (ISR) quorum and stalling partition writes.',
+    suggestedCommands: ['kafka-topics --describe --under-replicated-partitions', 'kafka-consumer-groups --describe', 'reassign-partitions'],
+    remediationCommand: 'reassign-partitions',
+  },
+
+  // Pipeline 4: Broker to Storage
+  'pipe4-multi-attach-lock': {
+    id: 'pipe4-multi-attach-lock',
+    category: 'pipe-4',
+    componentName: 'Pipeline 4 → 5: KAFKA BROKER to CSI VOLUME',
+    componentType: 'pipeline',
+    title: 'Exclusive Lock Contention (Multi-Attach Error)',
+    errorSignature: 'FailedAttachVolume: VolumeAttachment is already attached to node-b-storage-az1',
+    description: 'Node B crashed while holding an exclusive ReadWriteOnce AWS EBS / CSI volume lock. Replacement broker pod on Node C hangs in ContainerCreating indefinitely.',
+    suggestedCommands: ['kubectl describe pod kafka-broker-0-replacement', 'kubectl get volumeattachment', 'unlock-storage'],
+    remediationCommand: 'unlock-storage',
+  },
+  'pipe4-csi-grpc-timeout': {
+    id: 'pipe4-csi-grpc-timeout',
+    category: 'pipe-4',
+    componentName: 'Pipeline 4 → 5: KAFKA BROKER to CSI VOLUME',
+    componentType: 'pipeline',
+    title: 'CSI Storage Driver gRPC Controller Timeout',
+    errorSignature: 'rpc error: code = DeadlineExceeded desc = context deadline exceeded while awaiting headers',
+    description: 'The CSI storage driver controller pod times out communicating with cloud storage APIs during volume attachment, stalling PVC mount operations.',
+    suggestedCommands: ['kubectl logs -n kube-system -l app=ebs-csi-controller', 'kubectl get csinodes', 'restart-csi'],
+    remediationCommand: 'restart-csi',
+  },
+
+  // Node 5: CSI Volume
+  'node5-ro-remount': {
+    id: 'node5-ro-remount',
+    category: 'node-5',
+    componentName: 'Node 5: CSI VOLUME',
+    componentType: 'node',
+    title: 'Kernel Disk I/O Stall / Device Read-Only Remount',
+    errorSignature: 'EXT4-fs error (device rbd0): deleted inode referenced -> Remounting filesystem read-only',
+    description: 'Storage backend latency exceeded kernel timeouts, causing EXT4 file system errors and forcing the Linux kernel to remount /var/lib/kafka/data read-only to prevent corruption.',
+    suggestedCommands: ['dmesg -T | grep -E "EXT4|I/O error"', 'mount | grep rbd0', 'fsck-remount-rw'],
+    remediationCommand: 'fsck-remount-rw',
+  },
+  'node5-enospc': {
+    id: 'node5-enospc',
+    category: 'node-5',
+    componentName: 'Node 5: CSI VOLUME',
+    componentType: 'node',
+    title: 'Volume Quota Depletion (Zero Inodes / 100% Disk Usage)',
+    errorSignature: 'KafkaStorageException: No space left on device (ENOSPC: write failed)',
+    description: 'Persistent volume runs completely out of disk blocks or directory inodes. Kafka broker initiates emergency self-shutdown (Fatal exit: shutdown requested by storage manager).',
+    suggestedCommands: ['df -h /var/lib/kafka/data', 'df -i /var/lib/kafka/data', 'clean-log-dirs'],
+    remediationCommand: 'clean-log-dirs',
   },
 };
 
 export const useSimulationStore = create<SimulationState>((set, get) => ({
-  currentMission: 'mission-01',
-  missionTitle: MISSION_METADATA['mission-01'].title,
-  missionDescription: MISSION_METADATA['mission-01'].desc,
-  isChaosActive: true,
-  packetState: 'bursting-mtu',
+  activeScenario: 'pipe2-mtu-blackhole',
+  selectedComponent: 'pipe-2',
+  scenarioInfo: SCENARIOS['pipe2-mtu-blackhole'],
 
-  // Mission 01 defaults (Chaos: 1500B payload + 50B encap = 1550B > 1500B MTU)
+  // Node 1
+  edgeBufferCapacity: 10000,
+  edgeBufferUsed: 10000,
+  schemaRegistryStatus: 'HEALTHY',
+
+  // Pipeline 1
+  tlsCertStatus: 'VALID',
+  nlbSynFloodActive: false,
+
+  // Node 2
+  coreDnsStatus: 'RESOLVING',
+  ingressTargetStatus: 'HEALTHY',
+
+  // Pipeline 2
   interfaceMtu: 1500,
-  overlayEncapBytes: 50,
   packetPayloadBytes: 1500,
+  overlayEncapBytes: 50,
+  networkPolicyIngressBlocked: false,
 
-  // Mission 02 defaults
+  // Node 3
+  conntrackEntries: 48120,
+  conntrackMax: 262144,
+  socketRxDropped: 0,
+
+  // Pipeline 3
+  directBufferAllocStalled: false,
+  saslAuthenticated: true,
+
+  // Node 4
   jvmHeapMb: 4096,
-  nettyDirectMb: 4350,
+  nettyDirectMb: 2048,
   cgroupLimitMb: 8192,
-  podRestartCount: 4,
   podStatus: 'Running',
   podExitCode: null,
+  underReplicatedPartitions: 0,
+  inSyncReplicas: 3,
+  minIsrConfig: 2,
 
-  // Mission 03 defaults
-  volumeLockedByNode: 'node-b-storage-az1',
-  volumeTargetNode: 'node-c-compute-az1',
-  isVolumeAttached: false,
+  // Pipeline 4
+  volumeLockedByNode: null,
+  csiGrpcDeadlineExceeded: false,
 
-  // Mission 04 defaults
-  activeFinalizers: ['strimzi.io/kafka-broker-finalizer'],
-  isDeletionRequested: false,
+  // Node 5
+  filesystemStatus: 'rw',
+  diskFreeMb: 245000,
+  diskTotalMb: 500000,
+  inodeUsagePercent: 32,
 
   logs: [
-    { timestamp: '14:02:11', level: 'info', message: 'Platform Flight Simulator initialized in Guided Sandbox mode.' },
-    { timestamp: '14:02:12', level: 'warn', message: 'ACTIVE ANOMALY: Telemetry stream dropping frames at flannel.1 overlay interface.' },
+    { timestamp: '16:14:02', level: 'info', message: 'Platform Flight Simulator initialized with 18-Scenario Failure Taxonomy.' },
+    { timestamp: '16:14:03', level: 'warn', message: 'Active Anomaly: Path MTU Black Hole engaged on Pipeline 2 → 3.' },
   ],
 
-  setMission: (id: MissionId) => {
-    const meta = MISSION_METADATA[id];
-    let packetState: SimulationState['packetState'] = 'flowing';
-    let podStatus: SimulationState['podStatus'] = 'Running';
+  setScenario: (id: FailureScenarioId) => {
+    const info = SCENARIOS[id];
+    const timestamp = new Date().toLocaleTimeString();
 
-    if (id === 'mission-01') packetState = 'bursting-mtu';
-    if (id === 'mission-02') {
-      packetState = 'dropped-oom';
-      podStatus = 'CrashLoopBackOff';
-    }
-    if (id === 'mission-03') {
-      packetState = 'blocked-storage';
-      podStatus = 'ContainerCreating';
-    }
-    if (id === 'mission-04') {
-      podStatus = 'Terminating';
-    }
-
-    set({
-      currentMission: id,
-      missionTitle: meta.title,
-      missionDescription: meta.desc,
-      isChaosActive: true,
-      packetState,
-      podStatus,
-      interfaceMtu: id === 'mission-01' ? 1500 : 1420,
-      volumeLockedByNode: id === 'mission-03' ? 'node-b-storage-az1' : null,
-      isVolumeAttached: id !== 'mission-03',
-      activeFinalizers: id === 'mission-04' ? ['strimzi.io/kafka-broker-finalizer'] : [],
-      isDeletionRequested: id === 'mission-04',
-      logs: [
-        { timestamp: new Date().toLocaleTimeString(), level: 'info', message: `Switched to ${meta.title}` },
-        { timestamp: new Date().toLocaleTimeString(), level: 'warn', message: 'Failure scenario engaged. Inspect topology and triage via terminal.' },
-      ],
-    });
-  },
-
-  triggerChaos: () => {
-    const { currentMission } = get();
-    get().setMission(currentMission);
-  },
-
-  fixMtuClamp: (mtu: number) => {
-    set((state) => ({
-      interfaceMtu: mtu,
-      isChaosActive: false,
-      packetState: 'flowing',
-      logs: [
-        ...state.logs,
-        {
-          timestamp: new Date().toLocaleTimeString(),
-          level: 'success',
-          message: `REMEDIATION APPLIED: CNI overlay MTU clamped to ${mtu}B. Path MTU (1420B + 50B encap = 1470B < 1500B) verified clean!`,
-        },
-      ],
-    }));
-  },
-
-  tuneJvmMemory: (heapMb: number, offHeapLimitMb: number) => {
-    set((state) => ({
-      jvmHeapMb: heapMb,
-      nettyDirectMb: offHeapLimitMb,
+    // Reset base baseline
+    const updates: Partial<SimulationState> = {
+      activeScenario: id,
+      selectedComponent: info.category,
+      scenarioInfo: info,
+      edgeBufferUsed: 2150,
+      schemaRegistryStatus: 'HEALTHY',
+      tlsCertStatus: 'VALID',
+      nlbSynFloodActive: false,
+      coreDnsStatus: 'RESOLVING',
+      ingressTargetStatus: 'HEALTHY',
+      interfaceMtu: 1500,
+      networkPolicyIngressBlocked: false,
+      conntrackEntries: 48120,
+      socketRxDropped: 0,
+      directBufferAllocStalled: false,
+      saslAuthenticated: true,
+      jvmHeapMb: 4096,
+      nettyDirectMb: 2048,
       podStatus: 'Running',
       podExitCode: null,
-      isChaosActive: false,
-      packetState: 'flowing',
-      logs: [
-        ...state.logs,
-        {
-          timestamp: new Date().toLocaleTimeString(),
-          level: 'success',
-          message: `REMEDIATION APPLIED: JVM MaxDirectMemorySize tuned to ${offHeapLimitMb}MB. Total memory (Heap + Direct = ${heapMb + offHeapLimitMb}MB < ${state.cgroupLimitMb}MB cgroup) within safety envelope!`,
-        },
-      ],
-    }));
-  },
-
-  pruneVolumeAttachmentLock: () => {
-    set((state) => ({
+      underReplicatedPartitions: 0,
+      inSyncReplicas: 3,
       volumeLockedByNode: null,
-      isVolumeAttached: true,
-      podStatus: 'Running',
-      isChaosActive: false,
-      packetState: 'flowing',
-      logs: [
-        ...state.logs,
-        {
-          timestamp: new Date().toLocaleTimeString(),
-          level: 'success',
-          message: 'REMEDIATION APPLIED: Stale VolumeAttachment lock deleted. CSI controller attached volume to node-c successfully.',
-        },
-      ],
-    }));
-  },
+      csiGrpcDeadlineExceeded: false,
+      filesystemStatus: 'rw',
+      diskFreeMb: 245000,
+      inodeUsagePercent: 32,
+    };
 
-  stripFinalizers: () => {
+    // Apply specific scenario anomalies
+    switch (id) {
+      case 'nominal':
+        updates.interfaceMtu = 1420;
+        break;
+      case 'node1-buffer-exhaustion':
+        updates.edgeBufferUsed = 10000;
+        break;
+      case 'node1-schema-violation':
+        updates.schemaRegistryStatus = 'SCHEMA_NOT_FOUND';
+        break;
+      case 'pipe1-tls-handshake':
+        updates.tlsCertStatus = 'EXPIRED_OR_UNTRUSTED';
+        break;
+      case 'pipe1-nlb-syn-flood':
+        updates.nlbSynFloodActive = true;
+        break;
+      case 'node2-coredns-nxdomain':
+        updates.coreDnsStatus = 'NXDOMAIN_ERROR';
+        break;
+      case 'node2-target-503':
+        updates.ingressTargetStatus = 'UPSTREAM_503';
+        break;
+      case 'pipe2-mtu-blackhole':
+        updates.interfaceMtu = 1500;
+        updates.packetPayloadBytes = 1500;
+        break;
+      case 'pipe2-netpol-block':
+        updates.networkPolicyIngressBlocked = true;
+        break;
+      case 'node3-conntrack-saturation':
+        updates.conntrackEntries = 262144;
+        break;
+      case 'node3-ring-overflow':
+        updates.socketRxDropped = 128492;
+        break;
+      case 'pipe3-direct-byte-buffer':
+        updates.directBufferAllocStalled = true;
+        break;
+      case 'pipe3-sasl-auth':
+        updates.saslAuthenticated = false;
+        break;
+      case 'node4-cgroup-oom':
+        updates.nettyDirectMb = 4350;
+        updates.podStatus = 'CrashLoopBackOff';
+        updates.podExitCode = 137;
+        break;
+      case 'node4-under-replicated':
+        updates.underReplicatedPartitions = 8;
+        updates.inSyncReplicas = 1;
+        updates.podStatus = 'Degraded';
+        break;
+      case 'pipe4-multi-attach-lock':
+        updates.volumeLockedByNode = 'node-b-storage-az1';
+        updates.podStatus = 'ContainerCreating';
+        break;
+      case 'pipe4-csi-grpc-timeout':
+        updates.csiGrpcDeadlineExceeded = true;
+        updates.podStatus = 'ContainerCreating';
+        break;
+      case 'node5-ro-remount':
+        updates.filesystemStatus = 'ro';
+        updates.podStatus = 'Degraded';
+        break;
+      case 'node5-enospc':
+        updates.diskFreeMb = 0;
+        updates.inodeUsagePercent = 100;
+        updates.podStatus = 'CrashLoopBackOff';
+        break;
+    }
+
     set((state) => ({
-      activeFinalizers: [],
-      isDeletionRequested: false,
+      ...updates,
+      logs: [
+        ...state.logs,
+        { timestamp, level: 'warn', message: `CHAOS INJECTED: [${info.componentName}] ${info.title}` },
+        { timestamp, level: 'error', message: `Signature: ${info.errorSignature}` },
+      ],
+    }));
+  },
+
+  selectComponent: (cat: FailureCategory | null) => {
+    set({ selectedComponent: cat });
+  },
+
+  resolveActiveFailure: () => {
+    const { activeScenario, scenarioInfo } = get();
+    const timestamp = new Date().toLocaleTimeString();
+
+    set((state) => ({
+      activeScenario: 'nominal',
+      scenarioInfo: SCENARIOS['nominal'],
+      edgeBufferUsed: 2150,
+      schemaRegistryStatus: 'HEALTHY',
+      tlsCertStatus: 'VALID',
+      nlbSynFloodActive: false,
+      coreDnsStatus: 'RESOLVING',
+      ingressTargetStatus: 'HEALTHY',
+      interfaceMtu: 1420,
+      networkPolicyIngressBlocked: false,
+      conntrackEntries: 48120,
+      socketRxDropped: 0,
+      directBufferAllocStalled: false,
+      saslAuthenticated: true,
+      jvmHeapMb: 4096,
+      nettyDirectMb: 2048,
       podStatus: 'Running',
-      isChaosActive: false,
+      podExitCode: null,
+      underReplicatedPartitions: 0,
+      inSyncReplicas: 3,
+      volumeLockedByNode: null,
+      csiGrpcDeadlineExceeded: false,
+      filesystemStatus: 'rw',
+      diskFreeMb: 245000,
+      inodeUsagePercent: 32,
       logs: [
         ...state.logs,
         {
-          timestamp: new Date().toLocaleTimeString(),
+          timestamp,
           level: 'success',
-          message: 'REMEDIATION APPLIED: Orphan finalizer removed via merge patch. Object successfully reaped from etcd.',
+          message: `REMEDIATION SUCCESS: Resolved [${scenarioInfo.title}]. All nodes and pipelines restored to nominal health.`,
         },
       ],
     }));
   },
 
-  resetMission: () => {
-    const { currentMission } = get();
-    get().setMission(currentMission);
+  resetToNominal: () => {
+    get().resolveActiveFailure();
   },
 
   executeCommand: (cmd: string): string => {
     const trimmed = cmd.trim();
     const state = get();
-    const { currentMission, isChaosActive, interfaceMtu } = state;
+    const { activeScenario, scenarioInfo } = state;
 
-    if (trimmed === 'clear') {
-      return '';
-    }
-
+    if (trimmed === 'clear') return '';
     if (trimmed === 'help') {
-      return `Available Triage Commands:
-  - tcpdump -nnvv -i eth0 / flannel.1
-  - ip link show / ip link set mtu <val>
-  - kubectl describe pod kafka-broker-0
-  - dmesg -T | grep -i oom
-  - kubectl get volumeattachment,pvc,pv
-  - kubectl patch volumeattachment ... --dry-run
-  - kubectl edit daemonset -n kube-system cni-vxlan
-  - kubectl patch pod kafka-broker-0 --type=merge -p '{"metadata":{"finalizers":null}}'
-  - fix-mtu / resolve-oom / unlock-storage / strip-finalizer (quick fixes)`;
+      return `Platform Flight Simulator Diagnostic & Triage CLI
+Active Scenario: [${scenarioInfo.componentName}] ${scenarioInfo.title}
+Suggested Triage Commands:
+  ${scenarioInfo.suggestedCommands.map((c) => `- ${c}`).join('\n  ')}
+Quick Remediation Command:
+  - ${scenarioInfo.remediationCommand}
+Type "nominal" to reset the entire pipeline to healthy state.`;
     }
 
-    // Mission 01: MTU
-    if (currentMission === 'mission-01') {
+    if (trimmed === 'nominal' || trimmed === 'reset') {
+      get().resetToNominal();
+      return '[+] Simulation reset: All 5 nodes and 4 pipelines restored to nominal health.';
+    }
+
+    // Node 1: Buffer Exhaustion
+    if (activeScenario === 'node1-buffer-exhaustion') {
+      if (trimmed.includes('edge-agent.log') || trimmed.includes('status')) {
+        return `[ERROR] io.netty.buffer.BufferOverflowException: queue full (10000/10000 events)
+[WARN] EdgeTelemetryAgent: Backpressure ring buffer limit exceeded.
+[WARN] agent dropped 42,100 events: network bridge is blocked or stalling.`;
+      }
+      if (trimmed === 'iot-agent flush-buffer' || trimmed === 'flush-buffer') {
+        get().resolveActiveFailure();
+        return `[+] Flushed stagnant buffer queues. Edge agent ring buffer drained to 2,150/10,000 events.
+Telemetry dispatch resumed!`;
+      }
+    }
+
+    // Node 1: Schema Violation
+    if (activeScenario === 'node1-schema-violation') {
+      if (trimmed.includes('schema') || trimmed.includes('subjects')) {
+        return `SchemaNotFoundException: failed to fetch schema ID 412
+org.apache.avro.AvroTypeException: Expected field 'thermal_c' not found in incoming payload
+Record header: { schemaId: 412, version: 3, subject: "telemetry-value" } [INVALID]`;
+      }
+      if (trimmed === 'iot-agent reload-schema' || trimmed === 'reload-schema') {
+        get().resolveActiveFailure();
+        return `[+] Synced Schema Registry client cache. Schema ID 412 validated and registered.
+Payload serialization resumed!`;
+      }
+    }
+
+    // Pipeline 1: TLS Handshake
+    if (activeScenario === 'pipe1-tls-handshake') {
+      if (trimmed.includes('openssl') || trimmed.includes('curl')) {
+        return `CONNECTED(00000003)
+depth=0 CN = ingress.lakehouse.local
+verify error:num=10:certificate has expired
+notAfter=Sep 12 18:00:00 2026 GMT
+SSLHandshakeException: PKIX path building failed: unable to find valid certification path
+curl: (35) error:14094410:SSL routines:ssl3_read_bytes:sslv3 alert handshake failure`;
+      }
+      if (trimmed === 'renew-cert' || trimmed.includes('cert-manager')) {
+        get().resolveActiveFailure();
+        return `[+] Root CA renewed and rotated via cert-manager. Secret lakehouse-tls refreshed.
+mTLS handshake succeeded: TLSv1.3 / TLS_AES_256_GCM_SHA384!`;
+      }
+    }
+
+    // Pipeline 1: NLB SYN Flood
+    if (activeScenario === 'pipe1-nlb-syn-flood') {
+      if (trimmed.includes('netstat') || trimmed.includes('dmesg')) {
+        return `[14298.112940] TCP: request_sock_TCP: Possible SYN flooding on port 9092. Sending cookies. Check SNMP counters.
+TCPListenOverflows: 48,192
+TCPListenDrops: 12,402
+client timeout: ETIMEDOUT: Connection timed out after 30000ms`;
+      }
+      if (trimmed === 'tune-syn-backlog' || trimmed.includes('tcp_max_syn_backlog')) {
+        get().resolveActiveFailure();
+        return `[+] sysctl net.ipv4.tcp_max_syn_backlog set to 8192. NLB target group connection queue expanded.
+SYN backlog cleared. Ingress connections accepted!`;
+      }
+    }
+
+    // Node 2: CoreDNS NXDOMAIN
+    if (activeScenario === 'node2-coredns-nxdomain') {
+      if (trimmed.includes('dig') || trimmed.includes('lookup') || trimmed.includes('logs')) {
+        return `;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 48122
+;; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 0
+;; QUESTION SECTION:
+;kafka-broker-0.kafka-headless.svc.cluster.local. IN A
+;; AUTHORITY SECTION:
+cluster.local.		30	IN	SOA	ns.dns.cluster.local. hostmaster.cluster.local. 1726240000
+dial tcp: lookup kafka-broker-0 on 10.96.0.10:53: no such host`;
+      }
+      if (trimmed === 'restart-coredns' || trimmed.includes('coredns')) {
+        get().resolveActiveFailure();
+        return `[+] CoreDNS deployment rolled out. Cluster DNS cache flushed.
+Resolving kafka-broker-0.kafka-headless.svc.cluster.local -> 10.244.2.14 [OK]!`;
+      }
+    }
+
+    // Node 2: Target 503
+    if (activeScenario === 'node2-target-503') {
+      if (trimmed.includes('describe ingress') || trimmed.includes('endpoints')) {
+        return `Default backend: default-http-backend:80 (<error: endpoints "default-http-backend" not found>)
+Rules:
+  Host                    Path  Backends
+  ingress.lakehouse.local /     kafka-headless:9092 (<none: no healthy endpoints>)
+Annotations:
+  alb.ingress.kubernetes.io/healthcheck-path: /healthz
+Events:
+  Warning  Unhealthy  Readiness probe failed: HTTP probe failed with statuscode: 500
+HTTP/1.1 503 Service Temporarily Unavailable: no healthy upstream`;
+      }
+      if (trimmed === 'restart-broker' || trimmed.includes('restart')) {
+        get().resolveActiveFailure();
+        return `[+] Kafka broker pod probes passing. Target group marked HEALTHY (10.244.2.14:9092).
+503 cleared. Traffic forwarded!`;
+      }
+    }
+
+    // Pipeline 2: MTU Black Hole
+    if (activeScenario === 'pipe2-mtu-blackhole') {
       if (trimmed.includes('tcpdump')) {
-        if (isChaosActive) {
-          return `14:03:01.458291 IP 10.244.1.15.9092 > 10.244.2.40.9092: Flags [P.], seq 1:1460, ack 1, length 1460
-14:03:01.458315 IP 10.244.2.1 > 10.244.1.15: ICMP 10.244.2.40 unreachable - need to frag (mtu 1420), length 556
-14:03:01.460112 IP 10.244.1.15.9092 > 10.244.2.40.9092: Flags [P.], seq 1:1460, ack 1 (RETRANSMIT, DF bit set)
-[!] Packet size (1500B + 50B VXLAN) > Interface MTU (1500B). Packets dropped by kernel!`;
-        } else {
-          return `14:03:15.112901 IP 10.244.1.15.9092 > 10.244.2.40.9092: Flags [.], ack 1420, win 65535, length 0
-14:03:15.113042 IP 10.244.1.15.9092 > 10.244.2.40.9092: Flags [P.], seq 1:1420, length 1420 (Path MTU 1470B < 1500B OK)
-[+] Bidirectional telemetry flow verified. Zero packet drops observed.`;
-        }
+        return `16:15:01.458291 IP 10.244.1.15.9092 > 10.244.2.14.9092: Flags [P.], seq 1:1460, length 1460
+16:15:01.458315 IP 10.244.2.1 > 10.244.1.15: ICMP 10.244.2.14 unreachable - need to frag (mtu 1420), length 556
+16:15:01.460112 IP 10.244.1.15.9092 > 10.244.2.14.9092: Flags [P.], seq 1:1460, length 1460 (RETRANSMIT, DF bit set)
+flannel.1 drop counter: FRAME_TOO_LONG: 48,291`;
       }
-
-      if (trimmed.includes('ip link') || trimmed.includes('ifconfig')) {
-        return `1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536
-2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 state UP
-3: flannel.1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu ${interfaceMtu} state UP
-   vxlan id 1 local 172.31.20.10 dev eth0 dstport 8472`;
-      }
-
-      if (trimmed.includes('1420') || trimmed === 'fix-mtu') {
-        get().fixMtuClamp(1420);
-        return `[+] CNI DaemonSet config updated: overlay MTU clamped to 1420B.
-Restarting cni-node pods... Done.
-Verifying interface flannel.1 MTU... [ 1420 / 1420 ] PASS!
-Packet flow restored across overlay bridge!`;
+      if (trimmed === 'fix-mtu' || trimmed.includes('1420')) {
+        get().resolveActiveFailure();
+        return `[+] CNI DaemonSet overlay MTU clamped to 1420B.
+Path MTU (1420B payload + 50B VXLAN = 1470B < 1500B physical wire) verified clean.
+Zero packet drops!`;
       }
     }
 
-    // Mission 02: OOM
-    if (currentMission === 'mission-02') {
-      if (trimmed.includes('dmesg') || trimmed.includes('oom')) {
-        return `[14022.184910] Memory cgroup out of memory: Kill process 89124 (java) score 982 or sacrifice child
-[14022.184915] Killed process 89124 (java) total-vm:10824192kB, anon-rss:8389120kB, file-rss:4120kB
-[14022.185012] oom_reaper: reaped process 89124 (java), now anon-rss:0kB, file-rss:0kB
-Kernel Signal: SIGKILL (Signal 9) -> Container exit code 137`;
-      }
-
-      if (trimmed.includes('describe pod')) {
-        return `Name:         kafka-broker-0
+    // Pipeline 2: NetworkPolicy Block
+    if (activeScenario === 'pipe2-netpol-block') {
+      if (trimmed.includes('netpol')) {
+        return `Name:         deny-all-ingress
 Namespace:    lakehouse-infra
-State:        Waiting
-  Reason:     CrashLoopBackOff
-Last State:   Terminated
-  Reason:     OOMKilled
-  Exit Code:  137
-Limits:
-  memory:     8Gi
-Requests:
-  memory:     8Gi
-Environment:
-  KAFKA_JVM_PERFORMANCE_OPTS: -XX:MaxDirectMemorySize=5120m -Xmx4096m
-Events:
-  Warning  BackOff   2s (x4 over 3m)  kubelet  Back-off restarting failed container`;
+PodSelector:  app=kafka
+Allowing ingress traffic:
+  <none> (Default Deny Ingress)
+packet dropped by policy 'deny-all-ingress': TCP connection timeout to 10.244.2.14:9092`;
       }
-
-      if (trimmed.includes('resolve-oom') || trimmed.includes('MaxDirectMemorySize=2048') || trimmed.includes('DirectMemory')) {
-        get().tuneJvmMemory(4096, 2048);
-        return `[+] Manifest patched: -XX:MaxDirectMemorySize clamped to 2048m.
-Total container memory allocation: 4096m (Heap) + 2048m (Direct) + 512m (Metaspace/Stack) = 6656m <= 8192m cgroup limit.
-Pod kafka-broker-0 restarted and reached Running state!`;
+      if (trimmed === 'allow-netpol' || trimmed.includes('patch netpol')) {
+        get().resolveActiveFailure();
+        return `[+] NetworkPolicy patched: Ingress rule added permitting TCP port 9092 from Ingress namespace.
+Packets allowed across overlay wire!`;
       }
     }
 
-    // Mission 03: CSI Lock
-    if (currentMission === 'mission-03') {
-      if (trimmed.includes('describe pod')) {
-        return `Name:         kafka-broker-0-replacement
-Node:         node-c-compute-az1
-Status:       Pending
-Containers:
-  kafka:
-    State:    Waiting
-      Reason: ContainerCreating
-Events:
-  Warning  FailedAttachVolume  8s (x12 over 6m)  attachdetach-controller
-           Multi-Attach error for volume "pvc-telemetry-0" Volume is already exclusively attached to one node (node-b-storage-az1) and can't be attached to another`;
+    // Node 3: Conntrack Saturation
+    if (activeScenario === 'node3-conntrack-saturation') {
+      if (trimmed.includes('conntrack') || trimmed.includes('dmesg')) {
+        return `entries: 262144
+max: 262144 (100% UTILIZATION)
+dmesg: [18491.018241] nf_conntrack: table full, dropping packet
+drop_count: 51,209 packets dropped by netfilter conntrack engine`;
       }
-
-      if (trimmed.includes('volumeattachment') || trimmed.includes('get va')) {
-        return `NAME                                                                 ATTACHED   NODE                 AGE
-csi-ebs-vol-08f12a38b19283f                                          true       node-b-storage-az1   48m
-csi-ebs-vol-08f12a38b19283f-pending                                  false      node-c-compute-az1   6m`;
-      }
-
-      if (trimmed.includes('unlock-storage') || trimmed.includes('delete volumeattachment') || trimmed.includes('prune')) {
-        get().pruneVolumeAttachmentLock();
-        return `[+] Stale VolumeAttachment csi-ebs-vol-08f12a38b19283f pruned from API server.
-Node B lease released.
-attachdetach-controller successfully attached volume to node-c-compute-az1.
-Pod kafka-broker-0-replacement entered Running status!`;
+      if (trimmed === 'flush-conntrack' || trimmed.includes('conntrack_max')) {
+        get().resolveActiveFailure();
+        return `[+] sysctl net.netfilter.nf_conntrack_max doubled to 524288 and expired TIME_WAIT sockets flushed.
+Conntrack saturation cleared!`;
       }
     }
 
-    // Mission 04: Zombie Finalizer
-    if (currentMission === 'mission-04') {
-      if (trimmed.includes('get pod') || trimmed.includes('describe pod')) {
-        return `NAME             READY   STATUS        RESTARTS   AGE
-kafka-broker-0   1/1     Terminating   0          18d
-
-metadata:
-  deletionTimestamp: "2026-09-13T14:01:00Z"
-  finalizers:
-  - strimzi.io/kafka-broker-finalizer
-Status: Stuck in Terminating (controller deleted; finalizer cannot be processed)`;
+    // Node 3: Ring Overflow
+    if (activeScenario === 'node3-ring-overflow') {
+      if (trimmed.includes('ethtool') || trimmed.includes('ifconfig')) {
+        return `NIC statistics:
+     rx_packets: 48,192,019
+     rx_dropped: 128492
+     rx_missed_errors: 128492
+     rx_no_buffer_count: 98124
+NETDEV WATCHDOG: eth0 (e1000e): transmit queue 0 timed out`;
       }
-
-      if (trimmed.includes('strip-finalizer') || trimmed.includes('finalizers":null') || trimmed.includes('metadata.finalizers')) {
-        get().stripFinalizers();
-        return `[+] kubectl patch: metadata.finalizers removed from kafka-broker-0.
-Object removed from etcd state store.
-Namespace is clean!`;
+      if (trimmed === 'tune-ring-buffer' || trimmed.includes('rx 4096')) {
+        get().resolveActiveFailure();
+        return `[+] ethtool -G flannel.1 rx 4096 tx 4096 applied. Kernel ring buffer expanded.
+rx_dropped counter halted at 0!`;
       }
     }
 
-    return `Command not recognized: "${trimmed}". Type "help" to view triage playbooks.`;
+    // Pipeline 3: DirectByteBuffer OOM
+    if (activeScenario === 'pipe3-direct-byte-buffer') {
+      if (trimmed.includes('jcmd') || trimmed.includes('native_memory') || trimmed.includes('logs')) {
+        return `java.lang.OutOfMemoryError: Direct buffer memory
+	at java.base/java.nio.Bits.reserveMemory(Bits.java:178)
+	at java.base/java.nio.DirectByteBuffer.<init>(DirectByteBuffer.java:118)
+SocketChannel.read() threw java.io.IOException: Cannot allocate memory`;
+      }
+      if (trimmed === 'tune-direct-memory' || trimmed.includes('DirectMemory')) {
+        get().resolveActiveFailure();
+        return `[+] JVM options updated: -XX:MaxDirectMemorySize=4096m -XX:+UseLargePages.
+Off-heap memory pool expanded. DirectByteBuffer allocation unblocked!`;
+      }
+    }
+
+    // Pipeline 3: SASL Auth Failure
+    if (activeScenario === 'pipe3-sasl-auth') {
+      if (trimmed.includes('logs') || trimmed.includes('secret')) {
+        return `[ERROR] [SocketServer listener-9092] Failed authentication with /10.244.1.15
+org.apache.kafka.common.errors.SaslAuthenticationException: Failed to configure SASL client: Client unable to authenticate
+javax.security.sasl.SaslException: DIGEST-MD5: authentication failed: invalid response`;
+      }
+      if (trimmed === 'rotate-sasl' || trimmed.includes('jaas')) {
+        get().resolveActiveFailure();
+        return `[+] SASL SCRAM-SHA-512 secret synchronized across client and broker JAAS configurations.
+Client successfully authenticated to Kafka broker 0!`;
+      }
+    }
+
+    // Node 4: cgroup OOM
+    if (activeScenario === 'node4-cgroup-oom') {
+      if (trimmed.includes('dmesg') || trimmed.includes('describe pod')) {
+        return `[14022.184910] Memory cgroup out of memory: Kill process 28412 (java) score 982 or sacrifice child
+[14022.184915] Killed process 28412 (java) total-vm:10824192kB, anon-rss:8389120kB
+State: Waiting (CrashLoopBackOff)
+Last State: Terminated (OOMKilled, Exit Code 137)`;
+      }
+      if (trimmed === 'resolve-oom' || trimmed.includes('MaxDirectMemorySize=2048')) {
+        get().resolveActiveFailure();
+        return `[+] JVM -XX:MaxDirectMemorySize clamped to 2048m. Total memory 6144MB <= 8192MB cgroup limit.
+Container restarted into Running state!`;
+      }
+    }
+
+    // Node 4: Under-Replicated Partitions
+    if (activeScenario === 'node4-under-replicated') {
+      if (trimmed.includes('kafka-topics') || trimmed.includes('under-replicated')) {
+        return `Topic: telemetry-events	Partition: 0	Leader: 0	Replicas: 0,1,2	Isr: 0
+Topic: telemetry-events	Partition: 1	Leader: 0	Replicas: 0,1,2	Isr: 0
+[!] UnderReplicatedPartitions count: 8
+org.apache.kafka.common.errors.NotEnoughReplicasException: Number of in-sync replicas 1 is less than configured minimum 2`;
+      }
+      if (trimmed === 'reassign-partitions' || trimmed.includes('reassign')) {
+        get().resolveActiveFailure();
+        return `[+] Triggered partition rebalance across brokers 0, 1, 2. Follower catch-up complete.
+ISR restored: 3/3 in-sync. UnderReplicatedPartitions: 0!`;
+      }
+    }
+
+    // Pipeline 4: Multi-Attach Lock
+    if (activeScenario === 'pipe4-multi-attach-lock') {
+      if (trimmed.includes('describe pod') || trimmed.includes('volumeattachment')) {
+        return `Warning  FailedAttachVolume  Multi-Attach error for volume "pvc-telemetry-0"
+Volume is already exclusively attached to one node (node-b-storage-az1) and cannot be attached to node-c-compute-az1.
+kubectl get volumeattachment:
+csi-ebs-vol-08f12a38b19283f   node-b-storage-az1   true   12m`;
+      }
+      if (trimmed === 'unlock-storage' || trimmed.includes('delete volumeattachment')) {
+        get().resolveActiveFailure();
+        return `[+] Stale VolumeAttachment for node-b-storage-az1 pruned from API server.
+CSI driver attached volume to node-c. Replacement broker entered Running state!`;
+      }
+    }
+
+    // Pipeline 4: CSI gRPC Timeout
+    if (activeScenario === 'pipe4-csi-grpc-timeout') {
+      if (trimmed.includes('logs') || trimmed.includes('csi')) {
+        return `[ERROR] controller_helper.go:342] Error attaching volume: rpc error: code = DeadlineExceeded desc = context deadline exceeded while awaiting headers
+grpc_status: 4 (DEADLINE_EXCEEDED)
+AWS EBS API latency: 15420ms > 15000ms gRPC timeout threshold`;
+      }
+      if (trimmed === 'restart-csi' || trimmed.includes('csi-driver')) {
+        get().resolveActiveFailure();
+        return `[+] ebs-csi-controller restarted and client timeout increased to 30s.
+Volume attached successfully!`;
+      }
+    }
+
+    // Node 5: Read-Only Remount
+    if (activeScenario === 'node5-ro-remount') {
+      if (trimmed.includes('dmesg') || trimmed.includes('mount')) {
+        return `[19482.019284] EXT4-fs error (device rbd0): ext4_lookup: deleted inode referenced: 104821
+[19482.019310] Aborting journal on device rbd0-8.
+[19482.019342] Remounting filesystem read-only.
+KafkaStorageException: Disk error while writing to log file /var/lib/kafka/data/telemetry-0/0000000000.log`;
+      }
+      if (trimmed === 'fsck-remount-rw' || trimmed.includes('fsck')) {
+        get().resolveActiveFailure();
+        return `[+] Unmounted volume, executed fsck.ext4 -y /dev/rbd0 (journal replayed, 0 bad blocks), and remounted read-write.
+Kafka storage manager re-initialized log directories!`;
+      }
+    }
+
+    // Node 5: ENOSPC Disk Full
+    if (activeScenario === 'node5-enospc') {
+      if (trimmed.includes('df')) {
+        return `Filesystem      Size  Used Avail Use% Mounted on
+/dev/nvme0n1    500G  500G     0 100% /var/lib/kafka/data
+Inodes:         100% utilized (0 free inodes)
+KafkaStorageException: No space left on device
+ENOSPC: write failed -> Broker initiates hard self-shutdown`;
+      }
+      if (trimmed === 'clean-log-dirs' || trimmed.includes('clean')) {
+        get().resolveActiveFailure();
+        return `[+] Pruned expired segment files past retention threshold (24h). 245GB / 500GB reclaimed.
+Broker restarted with clean storage capacity!`;
+      }
+    }
+
+    return `Command not recognized for active scenario: "${trimmed}". Type "help" to see valid triage commands.`;
   },
 }));

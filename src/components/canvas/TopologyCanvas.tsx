@@ -18,7 +18,7 @@ import { PodNode } from './nodes/PodNode';
 import { StorageNode } from './nodes/StorageNode';
 import { PacketFlowEdge } from './edges/PacketFlowEdge';
 import { useSimulationStore } from '../../store/useSimulationStore';
-import { Flame, RefreshCw, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { ShieldCheck, RotateCcw, AlertTriangle, Activity } from 'lucide-react';
 
 const initialNodes: Node[] = [
   {
@@ -85,7 +85,8 @@ const initialEdges: Edge[] = [
 ];
 
 export const TopologyCanvas: React.FC = () => {
-  const { currentMission, isChaosActive, triggerChaos, resetMission, fixMtuClamp, tuneJvmMemory, pruneVolumeAttachmentLock, stripFinalizers } = useSimulationStore();
+  const { activeScenario, scenarioInfo, resolveActiveFailure, resetToNominal } = useSimulationStore();
+  const isNominal = activeScenario === 'nominal';
 
   const nodeTypes = useMemo(
     () => ({
@@ -107,46 +108,39 @@ export const TopologyCanvas: React.FC = () => {
 
   return (
     <div className="relative w-full h-full min-h-[460px] bg-slate-950 rounded-xl overflow-hidden border border-slate-800 shadow-2xl">
-      {/* Top Banner with Quick Chaos Controls */}
+      {/* Top Floating Banner */}
       <div className="absolute top-3 left-3 right-3 z-10 flex items-center justify-between pointer-events-none">
-        <div className="flex items-center gap-2 bg-slate-900/90 backdrop-blur-md px-3 py-1.5 rounded-lg border border-slate-700 pointer-events-auto shadow-lg">
-          <div className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping" />
+        <div className="flex items-center gap-2 bg-slate-900/95 backdrop-blur-md px-3 py-1.5 rounded-lg border border-slate-700 pointer-events-auto shadow-lg">
+          <div className={`w-2.5 h-2.5 rounded-full ${isNominal ? 'bg-cyan-400 animate-ping' : 'bg-red-400 animate-ping'}`} />
           <span className="text-xs font-mono font-bold text-slate-200">Packet & Buffer Flow Topology</span>
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">
-            {isChaosActive ? 'CHAOS INJECTED' : 'SYSTEM NOMINAL'}
+          <span
+            className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold ${
+              isNominal
+                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                : 'bg-red-500/20 text-red-400 border border-red-500/40 animate-pulse'
+            }`}
+          >
+            {isNominal ? 'FLOW NOMINAL (14.2 MB/s)' : `BLOCKED: ${scenarioInfo.componentName}`}
           </span>
         </div>
 
         <div className="flex items-center gap-2 pointer-events-auto">
-          {isChaosActive ? (
+          {!isNominal && (
             <button
-              onClick={() => {
-                if (currentMission === 'mission-01') fixMtuClamp(1420);
-                if (currentMission === 'mission-02') tuneJvmMemory(4096, 2048);
-                if (currentMission === 'mission-03') pruneVolumeAttachmentLock();
-                if (currentMission === 'mission-04') stripFinalizers();
-              }}
+              onClick={resolveActiveFailure}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/90 hover:bg-emerald-500 text-emerald-50 text-xs font-mono font-bold shadow-lg transition-colors border border-emerald-400/40"
             >
               <ShieldCheck className="w-3.5 h-3.5" />
-              Apply Quick Triage Fix
-            </button>
-          ) : (
-            <button
-              onClick={triggerChaos}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600/90 hover:bg-red-500 text-red-50 text-xs font-mono font-bold shadow-lg transition-colors border border-red-400/40"
-            >
-              <Flame className="w-3.5 h-3.5" />
-              Re-Inject Chaos
+              Quick Triage Fix
             </button>
           )}
 
           <button
-            onClick={resetMission}
+            onClick={resetToNominal}
             className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors shadow-lg"
-            title="Reset Scenario"
+            title="Reset Scenario to Nominal"
           >
-            <RefreshCw className="w-4 h-4" />
+            <RotateCcw className="w-4 h-4" />
           </button>
         </div>
       </div>
@@ -167,7 +161,9 @@ export const TopologyCanvas: React.FC = () => {
         <MiniMap
           className="!bg-slate-900 !border-slate-800"
           nodeColor={(n) => {
-            if (n.type === 'wire') return '#f59e0b';
+            if (n.type === 'sensor') return '#06b6d4';
+            if (n.type === 'ingress') return '#6366f1';
+            if (n.type === 'wire') return '#10b981';
             if (n.type === 'pod') return '#00e5ff';
             if (n.type === 'storage') return '#a855f7';
             return '#64748b';
