@@ -1,0 +1,214 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 520" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#030712" />
+      <stop offset="50%" stop-color="#0b1329" />
+      <stop offset="100%" stop-color="#020617" />
+    </linearGradient>
+
+    <linearGradient id="cyanCard" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#082f49" />
+    </linearGradient>
+
+    <linearGradient id="redCard" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2d0607" />
+      <stop offset="100%" stop-color="#180405" />
+    </linearGradient>
+
+    <linearGradient id="termGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#020617" />
+      <stop offset="100%" stop-color="#030712" />
+    </linearGradient>
+
+    <filter id="glowCyan" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+
+    <filter id="glowRed" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="4" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+
+    <style>
+      @keyframes pulseRed {
+        0%, 100% { opacity: 1; stroke-width: 3.5; }
+        50% { opacity: 0.35; stroke-width: 2; }
+      }
+      @keyframes dashMove {
+        to { stroke-dashoffset: -40; }
+      }
+      @keyframes particleNominal {
+        0% { transform: translateX(0); opacity: 0.2; }
+        50% { opacity: 1; }
+        100% { transform: translateX(120px); opacity: 0.2; }
+      }
+      @keyframes terminalFadeIn {
+        0% { opacity: 0; }
+        100% { opacity: 1; }
+      }
+      .anim-pulse-red {
+        animation: pulseRed 1.8s infinite ease-in-out;
+      }
+      .anim-dash {
+        animation: dashMove 1.5s linear infinite;
+      }
+      .code-font {
+        font-family: 'Fira Code', 'JetBrains Mono', 'Consolas', monospace;
+      }
+    </style>
+  </defs>
+
+  <!-- Background Canvas -->
+  <rect width="960" height="520" rx="14" fill="url(#bgGrad)" stroke="#1e293b" stroke-width="1.5" />
+
+  <!-- Window Header Bar -->
+  <rect x="0" y="0" width="960" height="38" rx="14" fill="#020617" stroke="#1e293b" stroke-width="1" />
+  <circle cx="24" cy="19" r="5" fill="#ef4444" />
+  <circle cx="40" cy="19" r="5" fill="#f59e0b" />
+  <circle cx="56" cy="19" r="5" fill="#10b981" />
+  <text x="80" y="24" fill="#94a3b8" font-size="12" font-weight="bold" class="code-font">PLATFORM FLIGHT SIMULATOR v1.4 | 5-NODE · 4-PIPELINE DIGITAL TWIN</text>
+  <rect x="740" y="9" width="200" height="20" rx="6" fill="#0c4a6e" stroke="#0284c7" stroke-width="1" />
+  <text x="750" y="23" fill="#38bdf8" font-size="10" font-weight="bold" class="code-font">● ACTIVE: PATH MTU FAULT</text>
+
+  <!-- ================= TOPOLOGY CANVAS REGION ================= -->
+  <g transform="translate(20, 50)">
+    <!-- Canvas Frame -->
+    <rect x="0" y="0" width="920" height="200" rx="10" fill="#020617" stroke="#1e293b" stroke-width="1" />
+
+    <!-- Grid Dots -->
+    <pattern id="gridPattern" width="20" height="20" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1" fill="#1e293b" />
+    </pattern>
+    <rect x="0" y="0" width="920" height="200" rx="10" fill="url(#gridPattern)" opacity="0.6" />
+
+    <!-- Pipeline Connections (Edges) -->
+    <!-- Edge 1: Sensor -> Ingress (Nominal) -->
+    <path d="M 170 100 L 220 100" stroke="#00e5ff" stroke-width="2.5" fill="none" opacity="0.8" />
+    <circle cx="195" cy="100" r="3.5" fill="#38bdf8" filter="url(#glowCyan)">
+      <animate attributeName="cx" values="170;220" dur="1.2s" repeatCount="indefinite" />
+    </circle>
+
+    <!-- Edge 2: Ingress -> Wire (FAULT: PATH MTU BLACK HOLE) -->
+    <path d="M 360 100 L 410 100" stroke="#ef4444" stroke-width="3" stroke-dasharray="6 4" fill="none" class="anim-pulse-red anim-dash" filter="url(#glowRed)" />
+    <!-- Stalled Particle & Alert Badge -->
+    <circle cx="385" cy="100" r="4.5" fill="#ef4444" filter="url(#glowRed)">
+      <animate attributeName="opacity" values="1;0.2;1" dur="0.9s" repeatCount="indefinite" />
+    </circle>
+    <rect x="330" y="48" width="165" height="22" rx="5" fill="#450a0a" stroke="#ef4444" stroke-width="1.2" />
+    <text x="336" y="63" fill="#fca5a5" font-size="9.5" font-weight="bold" class="code-font">⚠ ICMP 3,4: Frag Needed (1550B)</text>
+
+    <!-- Edge 3: Wire -> Kafka Pod (Stalled) -->
+    <path d="M 550 100 L 600 100" stroke="#475569" stroke-width="2" stroke-dasharray="4 4" fill="none" opacity="0.6" />
+
+    <!-- Edge 4: Kafka -> CSI Volume (Nominal/Idle) -->
+    <path d="M 740 100 L 790 100" stroke="#475569" stroke-width="2" stroke-dasharray="4 4" fill="none" opacity="0.6" />
+
+    <!-- Node 1: Edge Telemetry -->
+    <g transform="translate(20, 45)">
+      <rect width="150" height="110" rx="8" fill="url(#cyanCard)" stroke="#0284c7" stroke-width="1.5" />
+      <rect x="0" y="0" width="150" height="24" rx="8" fill="#082f49" />
+      <text x="10" y="16" fill="#38bdf8" font-size="10" font-weight="bold" class="code-font">NODE 1: EDGE SENSOR</text>
+      <text x="10" y="42" fill="#94a3b8" font-size="9" class="code-font">Buffer: 2,150 / 10,000</text>
+      <rect x="10" y="48" width="130" height="4" rx="2" fill="#1e293b" />
+      <rect x="10" y="48" width="28" height="4" rx="2" fill="#06b6d4" />
+      <text x="10" y="68" fill="#94a3b8" font-size="9" class="code-font">Schema: ID 412 (OK)</text>
+      <text x="10" y="84" fill="#94a3b8" font-size="9" class="code-font">Stream: 14.2 MB/s</text>
+      <rect x="10" y="92" width="70" height="14" rx="3" fill="#065f46" />
+      <text x="16" y="103" fill="#a7f3d0" font-size="8" font-weight="bold" class="code-font">NOMINAL</text>
+    </g>
+
+    <!-- Node 2: Gateway Ingress -->
+    <g transform="translate(220, 45)">
+      <rect width="140" height="110" rx="8" fill="#0f172a" stroke="#6366f1" stroke-width="1.5" />
+      <rect x="0" y="0" width="140" height="24" rx="8" fill="#1e1b4b" />
+      <text x="10" y="16" fill="#818cf8" font-size="10" font-weight="bold" class="code-font">NODE 2: INGRESS</text>
+      <text x="10" y="42" fill="#94a3b8" font-size="9" class="code-font">NLB VIP: 10.240.0.10</text>
+      <text x="10" y="58" fill="#94a3b8" font-size="9" class="code-font">CoreDNS: RESOLVING</text>
+      <text x="10" y="74" fill="#94a3b8" font-size="9" class="code-font">Upstream: 9092 TLS</text>
+      <rect x="10" y="92" width="60" height="14" rx="3" fill="#312e81" />
+      <text x="15" y="103" fill="#c7d2fe" font-size="8" font-weight="bold" class="code-font">FORWARD</text>
+    </g>
+
+    <!-- Node 3: CNI Wire -->
+    <g transform="translate(410, 45)">
+      <rect width="140" height="110" rx="8" fill="url(#redCard)" stroke="#ef4444" stroke-width="1.5" />
+      <rect x="0" y="0" width="140" height="24" rx="8" fill="#450a0a" />
+      <text x="10" y="16" fill="#fca5a5" font-size="10" font-weight="bold" class="code-font">NODE 3: CNI WIRE</text>
+      <text x="10" y="42" fill="#cbd5e1" font-size="9" class="code-font">Device: flannel.1</text>
+      <text x="10" y="58" fill="#f87171" font-size="9" font-weight="bold" class="code-font">MTU: 1500 (No Clamp)</text>
+      <text x="10" y="74" fill="#fca5a5" font-size="9" class="code-font">Wire: 1550B (DF=1)</text>
+      <rect x="10" y="92" width="75" height="14" rx="3" fill="#7f1d1d" />
+      <text x="15" y="103" fill="#fecaca" font-size="8" font-weight="bold" class="code-font">DROPPING</text>
+    </g>
+
+    <!-- Node 4: Kafka Broker -->
+    <g transform="translate(600, 45)">
+      <rect width="140" height="110" rx="8" fill="#0f172a" stroke="#0ea5e9" stroke-width="1.5" />
+      <rect x="0" y="0" width="140" height="24" rx="8" fill="#082f49" />
+      <text x="10" y="16" fill="#38bdf8" font-size="10" font-weight="bold" class="code-font">NODE 4: KAFKA-0</text>
+      <text x="10" y="42" fill="#94a3b8" font-size="9" class="code-font">cgroup Limit: 8GiB</text>
+      <text x="10" y="58" fill="#94a3b8" font-size="9" class="code-font">Heap: 4096MB</text>
+      <text x="10" y="74" fill="#94a3b8" font-size="9" class="code-font">ISR: 3/3 (Quorum)</text>
+      <rect x="10" y="92" width="60" height="14" rx="3" fill="#065f46" />
+      <text x="15" y="103" fill="#a7f3d0" font-size="8" font-weight="bold" class="code-font">HEALTHY</text>
+    </g>
+
+    <!-- Node 5: CSI Volume -->
+    <g transform="translate(790, 45)">
+      <rect width="115" height="110" rx="8" fill="#0f172a" stroke="#a855f7" stroke-width="1.5" />
+      <rect x="0" y="0" width="115" height="24" rx="8" fill="#3b0764" />
+      <text x="10" y="16" fill="#d8b4fe" font-size="10" font-weight="bold" class="code-font">NODE 5: CSI</text>
+      <text x="10" y="42" fill="#94a3b8" font-size="9" class="code-font">/dev/nvme0n1</text>
+      <text x="10" y="58" fill="#94a3b8" font-size="9" class="code-font">Mode: rw,noatime</text>
+      <text x="10" y="74" fill="#94a3b8" font-size="9" class="code-font">Free: 245GB</text>
+      <rect x="10" y="92" width="50" height="14" rx="3" fill="#581c87" />
+      <text x="15" y="103" fill="#e9d5ff" font-size="8" font-weight="bold" class="code-font">RWO</text>
+    </g>
+  </g>
+
+  <!-- ================= VIRTUAL TERMINAL REGION ================= -->
+  <g transform="translate(20, 260)">
+    <!-- Terminal Background -->
+    <rect width="920" height="240" rx="10" fill="url(#termGrad)" stroke="#1e293b" stroke-width="1" />
+
+    <!-- Terminal Title Bar -->
+    <rect width="920" height="30" rx="10" fill="#020617" />
+    <circle cx="18" cy="15" r="4" fill="#ef4444" opacity="0.8" />
+    <circle cx="32" cy="15" r="4" fill="#f59e0b" opacity="0.8" />
+    <circle cx="46" cy="15" r="4" fill="#10b981" opacity="0.8" />
+    <text x="65" y="19" fill="#64748b" font-size="11" font-weight="bold" class="code-font">root@site-01-triage:~#  [Kubernetes CNI Diagnostics]</text>
+
+    <!-- Playbook Chips on Header -->
+    <rect x="520" y="6" width="130" height="18" rx="4" fill="#0f172a" stroke="#334155" />
+    <text x="528" y="19" fill="#38bdf8" font-size="9.5" class="code-font">tcpdump -nnvv -i eth0</text>
+    <rect x="660" y="6" width="115" height="18" rx="4" fill="#0f172a" stroke="#334155" />
+    <text x="668" y="19" fill="#38bdf8" font-size="9.5" class="code-font">ip link show flannel</text>
+    <rect x="785" y="6" width="125" height="18" rx="4" fill="#064e3b" stroke="#10b981" stroke-width="1.2" />
+    <text x="793" y="19" fill="#6ee7b7" font-size="9.5" font-weight="bold" class="code-font">⚡ fix-mtu (Remediate)</text>
+
+    <!-- Terminal Text Content -->
+    <g transform="translate(18, 50)" class="code-font" font-size="11">
+      <!-- Command 1 -->
+      <text x="0" y="0" fill="#38bdf8" font-weight="bold">$ tcpdump -nnvv -i eth0 -s0 'tcp port 9092 or icmp'</text>
+      <!-- Trace Output -->
+      <text x="0" y="20" fill="#94a3b8">16:15:01.458291 IP 10.244.1.15.9092 &gt; 10.244.2.14.9092: Flags [P.], seq 1:1460, length 1460</text>
+      <text x="0" y="38" fill="#f87171" font-weight="bold">16:15:01.458315 IP 10.244.2.1 &gt; 10.244.1.15: ICMP unreachable - need to frag (mtu 1420), length 556</text>
+      <text x="0" y="56" fill="#cbd5e1">16:15:01.460112 IP 10.244.1.15.9092 &gt; 10.244.2.14.9092: Flags [P.], seq 1:1460, length 1460 (DF set)</text>
+      <text x="0" y="74" fill="#ef4444" font-weight="bold">flannel.1 drop counter: FRAME_TOO_LONG: 48,291 packets dropped at VXLAN bridge boundary</text>
+
+      <!-- Command 2: Remediation -->
+      <text x="0" y="105" fill="#38bdf8" font-weight="bold">$ fix-mtu</text>
+      <!-- Remediation Result -->
+      <text x="0" y="125" fill="#34d399" font-weight="bold">[+] CNI DaemonSet overlay MTU clamped to 1420B (1420B payload + 50B VXLAN = 1470B &lt; 1500B physical wire).</text>
+      <text x="0" y="143" fill="#34d399">[+] Path MTU verified clean. Packet drops halted. End-to-end ingestion restored at 14.2 MB/s!</text>
+
+      <!-- Active Prompt -->
+      <text x="0" y="172" fill="#38bdf8" font-weight="bold">$ <tspan fill="#e2e8f0">_</tspan></text>
+      <rect x="14" y="160" width="7" height="14" fill="#38bdf8">
+        <animate attributeName="opacity" values="1;0;1" dur="1s" repeatCount="indefinite" />
+      </rect>
+    </g>
+  </g>
+</svg>
