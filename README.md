@@ -225,11 +225,19 @@ Open [http://localhost:3000](http://localhost:3000) in your browser to enter the
 
 ---
 
-## 🛠️ Tech Stack & Engineering Standards
+### 🛠️ Platform Architecture & Engineering Stack
 
-* **Framework:** [Next.js 14](https://nextjs.org/) (App Router, Server & Client Components)
-* **Interactive Canvas:** [@xyflow/react](https://reactflow.dev/) (Custom SVG nodes, bezier animated edges, packet flow particle physics)
-* **State Machine:** [Zustand](https://github.com/pmndrs/zustand) (Reactive state machine syncing terminal command execution with canvas physics)
-* **Styling:** [Tailwind CSS](https://tailwindcss.com/) with mission control dark cockpit design system
-* **Icons:** [Lucide React](https://lucide.dev/)
-* **CI/CD:** [GitHub Actions](https://github.com/FreeFades2Black/platform-flight-simulator/actions) with automated test verification, static page export, and automated GitHub Pages deployment.
+#### 1. Target Operational Infrastructure (Simulated Substrate)
+* **Orchestration & Control Plane:** Kubernetes (v1.28+) / Red Hat OpenShift, `kube-controller-manager`, etcd consensus.
+* **Streaming & Event Ingestion:** Apache Kafka (Strimzi Operator), Java Virtual Machine (OpenJDK 17/21), Netty NIO engine (`DirectByteBuffer`).
+* **Networking & Encapsulation:** Linux Kernel Network Stack, CNI (Flannel / Cilium eBPF), VXLAN/Geneve overlays, iptables/conntrack, Layer 4 Network Load Balancers.
+* **Storage & Persistence:** Container Storage Interface (CSI), Linux Block Layer (`/dev/rbd*`, NVMe-oF, AWS EBS), EXT4 / XFS journaling (`JBD2`), SCSI-3 Persistent Reservations.
+* **Automated Fencing & Remediation:** Node Health Check (NHC) Operator, Self-Node Remediation (SNR) Operator, Linux hardware watchdog (`/dev/watchdog`), native out-of-service taint subsystem.
+
+#### 2. Digital Twin Simulator Engine (Web Interface)
+* **Application Framework:** Next.js 14 (App Router, Static Export).
+* **Topology Canvas:** `@xyflow/react` (Custom SVG hardware/container nodes, bezier edges, dynamic particle flow).
+* **State Machine & CLI Parser:** Zustand (Reactive deterministic state machine evaluating real Linux, `kubectl`, and Kafka triage commands).
+* **Terminal Emulator:** Custom VT100-style interactive triage shell with context-aware execution chips.
+* **Styling & Design System:** Tailwind CSS (Tactical edge cockpit theme).
+* **CI/CD & Verification:** GitHub Actions (Automated 18-scenario state-transition test suite, static build validation, GitHub Pages automated deployment).
