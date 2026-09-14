@@ -58,10 +58,12 @@
 
 This taxonomy organizes the 18 primary failure modes across modern cloud-native data ingestion pipelines.
 
-> 📖 **Comprehensive Documentation References:**
+> 📖 **Comprehensive Operational References:**
 > * **Exhaustive 18-Scenario Runbook:** [docs/COMPLETE_FAILURE_TAXONOMY_RUNBOOK.md](docs/COMPLETE_FAILURE_TAXONOMY_RUNBOOK.md) *(Full failure physics, log snippets, step-by-step CLI commands, and verification for all 18 scenarios)*
-> * **Terminal CLI Cheat Sheet:** [docs/interview_operational_cheat_sheet.md](docs/interview_operational_cheat_sheet.md) *(Formatted for terminal review via nano/less across all 9 topology stages)*
-> * **Technical Interview Whiteboard Strategy:** [docs/INTERVIEW_DEMO_STRATEGY.md](docs/INTERVIEW_DEMO_STRATEGY.md) *(Scripted talking points and live demonstration walkthrough)* Each scenario includes authentic kernel, container runtime, and Kubernetes log signatures alongside deterministic triage and remediation playbooks:
+> * **Operational Resilience & Architecture Guide:** [docs/OPERATIONAL_RESILIENCE_GUIDE.md](docs/OPERATIONAL_RESILIENCE_GUIDE.md) *(Cross-layer diagnostics, kernel cgroups, and automated node remediation architecture)*
+> * **Terminal CLI Cheat Sheet:** [docs/OPERATIONAL_TRIAGE_CHEAT_SHEET.md](docs/OPERATIONAL_TRIAGE_CHEAT_SHEET.md) *(Formatted for terminal review via nano/less across all 9 topology stages)*
+
+Each scenario includes authentic kernel, container runtime, and Kubernetes log signatures alongside deterministic triage and remediation playbooks:
 
 | Topology Component | Failure Mode | Authentic Error Signature / Kernel Log | Triage & Remediation Command |
 | :--- | :--- | :--- | :--- |
@@ -86,28 +88,26 @@ This taxonomy organizes the 18 primary failure modes across modern cloud-native 
 
 ---
 
-## 🎯 Technical Interview Demonstration Strategy
+## 🔬 Operational Architecture & Incident Dynamics
 
-> Complete interview presentation guide and scripted talking points are available in [docs/INTERVIEW_DEMO_STRATEGY.md](docs/INTERVIEW_DEMO_STRATEGY.md).
+Complete post-incident analysis, failure mechanics, and verification runbooks are documented in `docs/OPERATIONAL_RESILIENCE_GUIDE.md`.
 
-When interviewing for Senior Platform Delivery & Reliability roles, this simulator serves as an interactive architecture whiteboard to demonstrate cross-layer diagnostics:
+This flight simulator models the critical hand-offs across distributed edge-to-core data pipelines, exposing the failure boundaries where standard telemetry and application logs fail to report ground truth:
 
 ### 1. The Wire Trap (Pipeline 2 → 3: Ingress to CNI Overlay)
-* **The Physics:** Physical MTU is 1500B. Line-rate telemetry generates 1460B payload + 40B TCP/IP = 1500B. Flannel VXLAN adds a 50-byte encapsulation header, pushing total wire frame size to **1550 Bytes** with Don't Fragment (`DF=1`).
-* **The Insight:** Synthetic unit tests pass because small payloads never exceed MTU. In production, un-clamped CNI interfaces silently drop full packets. If intermediate middleboxes block ICMP Type 3, connections hang without RST or FIN.
-* **Triage:** `tcpdump -nnvv -i eth0`, inspect `flannel.1 FRAME_TOO_LONG`, execute `fix-mtu` to clamp overlay MTU to 1420B.
+* **Architectural Mechanics:** Physical MTU is constrained to 1500B. Line-rate telemetry batches generate 1460B payload + 40B TCP/IP headers (1500B wire frame with `DF=1`). Flannel VXLAN adds a 50B encapsulation header, pushing the total wire frame to 1550B.
+* **Failure Mode:** Synthetic ping tests pass because small payloads never hit the MTU ceiling. Under line-rate traffic, un-clamped overlay interfaces silently drop frames. When middlebox firewalls drop `ICMP Type 3, Code 4` (Fragmentation Needed), connections black-hole without sending `TCP RST` or `FIN`.
+* **Verification & Triage:** Run `tcpdump -nnvv -i eth0`, monitor `flannel.1` for `FRAME_TOO_LONG` drops, and clamp CNI overlay MTU to 1420B (`fix-mtu`).
 
 ### 2. The Invisible Reaper (Node 4: cgroup v2 vs Application Logs)
-* **The Physics:** Container memory ceiling is 8192MB. JVM Heap is allocated 4096MB. High connection volume causes Netty off-heap direct buffers (`DirectByteBuffer`) to expand to 4350MB. Combined RSS reaches 8446MB.
-* **The Insight:** Kafka's `server.log` has zero entries because the Linux kernel cgroup subsystem executes an uncatchable `SIGKILL (Exit Code 137)` directly against the process. Searching application logs is a diagnostic anti-pattern.
-* **Triage:** `dmesg -T | grep -i oom`, inspect `cgroup.memory.current`, clamp `-XX:MaxDirectMemorySize=2048m` (`resolve-oom`).
+* **Architectural Mechanics:** Container memory ceiling is pinned to 8192MB. JVM Heap is allocated 4096MB (`-Xmx4g`). Under high concurrent connection spikes, Netty off-heap direct socket buffers (`DirectByteBuffer`) expand to 4350MB. Total process Resident Set Size (RSS) hits 8446MB.
+* **Failure Mode:** OpenJDK defaults `-XX:MaxDirectMemorySize` to `-Xmx`, causing the JVM to believe it can allocate up to 8GB off-heap in addition to heap space. Because heap usage is healthy, Java never triggers GC. The Linux kernel cgroup subsystem fires an uncatchable `SIGKILL` (`Exit Code 137`). Application logs (`server.log`) show zero exceptions.
+* **Verification & Triage:** Inspect `dmesg -T | grep -i oom`, evaluate `cgroup.memory.current`, and clamp `-XX:MaxDirectMemorySize=2048m` alongside a 30% system cushion.
 
 ### 3. The Frozen Disk (Pipeline 4: CSI VolumeAttachment Deadlock)
-* **The Physics:** Node B crashes or network flaps abruptly while holding an exclusive `ReadWriteOnce` AWS EBS or Ceph block volume attachment.
-* **The Insight:** Replacement broker scheduled to Node C hangs in `ContainerCreating` with `FailedAttachVolume: Multi-Attach error`. The cloud controller refuses concurrent attachments to prevent silent data corruption.
-* **Triage:** Inspect `kubectl get volumeattachment`, prune the stale API attachment object (`unlock-storage`), allowing the CSI driver to attach the volume to Node C.
-
----
+* **Architectural Mechanics:** A stateful broker host crashes or drops its network lease abruptly while holding an exclusive `ReadWriteOnce` (RWO) storage attachment.
+* **Failure Mode:** The scheduler immediately reschedules the broker pod to a healthy worker node. However, the replacement pod hangs indefinitely in `ContainerCreating` with `FailedAttachVolume: Multi-Attach error`. The cloud/SAN storage controller rejects concurrent attachments to prevent dual-writer filesystem corruption.
+* **Verification & Triage:** Query `kubectl get volumeattachment`, verify node isolation out-of-band, and clear the stale `VolumeAttachment` API object (or automate via Node Health Check and Self-Node Remediation using the native `out-of-service` taint).
 
 ---
 
@@ -165,14 +165,14 @@ These three documented production incidents demonstrate root-cause isolation acr
   kubectl scale statefulset kafka-broker --replicas=3 -n lakehouse-platform
   ```
 
-## 💼 Job Requirement Alignment Matrix
+## 🛡️ Enterprise Platform Reliability Standards Matrix
 
-| Job Requirement (Enlighten Senior Platform Delivery & Reliability) | What Was Built in the Simulator to Prove It |
+| Production Reliability Standard | What Was Engineered in the Simulator to Validate It |
 | :--- | :--- |
-| **"Debug and troubleshoot critical issues anywhere in the stack..."** | Modeled the entire spectrum: physical wire MTU clamps, Linux netfilter conntrack saturation (262,144 entries), kernel socket buffer drops (`rx_dropped`), EXT4 superblock read-only remounts, and JVM DirectByteBuffer off-heap exhaustion. |
-| **"Deep, hands-on experience deploying, operating, and debugging K8s fleets..."** | Implemented realistic triage workflows using authentic `kubectl describe pod`, `dmesg -T`, `tcpdump -nnvv`, `conntrack -S`, `ethtool -S`, and `df -i` output parsing. |
-| **"Maintain a living knowledge base of failure modes, fixes, and runbooks."** | Structured the 18-scenario matrix with explicit error signatures, diagnostic procedures, and deterministic one-command remediation playbooks. |
-| **"Mentor engineers on debugging, deployment, and operational excellence."** | Built an interactive educational sandbox that allows engineers to safely inject faults, observe side effects, and practice triage commands. |
+| **Cross-Layer Fault Isolation** | Models the complete stack spectrum: physical wire MTU clamps, Linux netfilter conntrack saturation (262,144 entries), kernel socket buffer drops (`rx_dropped`), EXT4 superblock read-only remounts, and JVM DirectByteBuffer off-heap exhaustion. |
+| **Production Incident Verification** | Implemented realistic triage workflows using authentic `kubectl describe pod`, `dmesg -T`, `tcpdump -nnvv`, `conntrack -S`, `ethtool -S`, and `df -i` output parsing. |
+| **Deterministic Runbook Automation** | Structured the 18-scenario matrix with explicit error signatures, diagnostic procedures, and deterministic one-command remediation playbooks. |
+| **Automated Node Self-Healing** | Engineered the Node Health Check (NHC) and Self-Node Remediation (SNR) operator pipeline to automate non-graceful node fencing and volume detachment. |
 
 ---
 

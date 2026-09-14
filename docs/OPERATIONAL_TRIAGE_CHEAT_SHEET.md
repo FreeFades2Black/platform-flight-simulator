@@ -1,12 +1,16 @@
-# Operational Triage & Interview Cheat Sheet: Multi-Site Ingest Platform
+# ⚡ Operational Triage Cheat Sheet: Multi-Site Ingest Platform
+### Fast CLI Reference for Platform Engineers & SREs Debugging Production Incidents
+
+Detailed 18-scenario runbook: `docs/COMPLETE_FAILURE_TAXONOMY_RUNBOOK.md`  
+Architecture Deep-Dive: `docs/OPERATIONAL_RESILIENCE_GUIDE.md`
 
 ## Core Triage Mental Model
 Troubleshoot backward along the physical and logical data path:
-Wire / MTU (L2/L3) -> Ingress & CNI (L4/L7) -> Linux Kernel & cgroups -> Process Memory & JVM -> Storage Substrate & Locks -> etcd Consensus
+`Wire / MTU (L2/L3) -> Ingress & CNI (L4/L7) -> Linux Kernel & cgroups -> Process Memory & JVM -> Storage Substrate & Locks -> etcd Consensus`
 
-Detailed 18-scenario runbook: docs/COMPLETE_FAILURE_TAXONOMY_RUNBOOK.md
+---
 
-### The 3 Golden Operational Truths (Elevator Pitch)
+### The 3 Golden Operational Truths
 * **Ingest & Edge:** *"At line rate, standard tooling hides failures. Synthetic health checks pass because small packets fit within a 1500-byte frame, but high-throughput telemetry batches get dropped at the overlay boundary because VXLAN adds 50 bytes of encapsulation with the DF bit set."*
 * **Compute & JVM:** *"When high connection counts surge into Kafka, checking server.log yields nothing. OpenJDK defaults -XX:MaxDirectMemorySize to -Xmx, meaning the JVM believes it can consume 12GB inside an 8GB container. The Linux kernel cgroup controller reaps the process with SIGKILL 137 from the outside."*
 * **Block Storage & Recovery:** *"When stateful nodes fail ungracefully, you can't rely on manual kubectl delete commands at 2:00 AM. We automate node fencing via Node Health Check and Self-Node Remediation using the native out-of-service taint to release exclusive SCSI-3 locks automatically, while deploying storage-aware readiness probes so filesystems that flip to read-only fail fast before corrupting partition state."*
