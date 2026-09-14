@@ -217,7 +217,7 @@ This runbook documents the complete **18-Scenario Failure Taxonomy** across the 
   restart-broker
   # Applied: kubectl rollout restart statefulset/kafka -n lakehouse-platform
   ```
-* **Post-Remediation Verification:** Kafka broker endpoints registered as healthy in Ingress pool; 503 errors clear.
+* **Post-Remediation Verification:** Kafka broker endpoints registered as healthy in Ingress pool; TCP connection refused errors clear.
 
 ---
 

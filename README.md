@@ -28,8 +28,8 @@ The **Platform Flight Simulator** serves as a digital twin and failure injection
 | :--- | :--- | :--- |
 | **01: The Wire Trap** | CNI overlay MTU 1550B vs. 1500B physical wire with `DF=1` | **Tactical WAN & Cross-Domain Comms:** Forward-deployed sensor forwarders push encrypted batch bursts over tactical SATCOM/radio bridges. Miscalculated encapsulation headers drop intelligence feeds without TCP RST notifications. |
 | **02: The Invisible Reaper** | Netty off-heap DirectByteBuffer breaching cgroup v2 ($137$) | **High-Density Sensor Telemetry:** Real-time EW/RF signal processing pods ingest multi-gigabit bursts. Off-heap native memory bypasses runtime garbage collection, triggering kernel termination without application logs. |
-| **03: The Frozen Disk** | Ungraceful node panic leaving SCSI-3 volume locks | **Contested Edge Node Survivability:** A tactical server node suffers sudden power disruption or battle damage. Automated fencing (NHC/SNR) with native out-of-service taints forces storage detachment and reschedules processing in <90 seconds. |
-| **04: Storage Stall & RO Mount** | JBD2 journal abort & filesystem remount read-only | **Ruggedized Edge Storage Integrity:** SAN/NVMe latency spikes during write-heavy surveillance recording cause the kernel to remount storage read-only, requiring storage-aware readiness health checks. |
+| **03: The Stale Attachment** | Ungraceful node panic leaving SCSI-3 volume locks | **Contested Edge Node Survivability:** A tactical server node suffers sudden power disruption or battle damage. Automated fencing (NHC/SNR) with native out-of-service taints forces storage detachment and reschedules processing in <90 seconds. |
+| **04: The Frozen Disk** | JBD2 journal abort & filesystem remount read-only | **Ruggedized Edge Storage Integrity:** SAN/NVMe latency spikes during write-heavy surveillance recording cause the kernel to remount storage read-only, requiring storage-aware readiness health checks. |
 
 ---
 
@@ -47,7 +47,7 @@ The **Platform Flight Simulator** serves as a digital twin and failure injection
 > *"At line rate, standard tooling hides failures. Synthetic health checks pass because small packets fit within a 1500-byte frame, but high-throughput telemetry batches get dropped at the overlay boundary because VXLAN adds 50 bytes of encapsulation with the DF bit set."*
 >
 > ### ⚙️ 2. The Compute & JVM Boundary
-> *"When high connection counts surge into Kafka, checking server.log yields nothing. OpenJDK defaults -XX:MaxDirectMemorySize to -Xmx, meaning the JVM believes it can consume 12GB inside an 8GB container. The Linux kernel cgroup controller reaps the process with SIGKILL 137 from the outside."*
+> *"When high connection counts surge into Kafka, checking server.log yields nothing. OpenJDK defaults -XX:MaxDirectMemorySize to -Xmx (4GB), meaning the JVM believes it can allocate 8GB of heap and off-heap memory alone inside an 8GB container. Combined with native thread stacks and metaspace, total RSS reaches 8452MB, and the Linux kernel cgroup controller reaps the process with SIGKILL 137 from the outside."*
 >
 > ### 🛡️ 3. The Block Storage & Recovery Plane
 > *"When stateful nodes fail ungracefully, you can't rely on manual kubectl delete commands at 2:00 AM. We automate node fencing via Node Health Check and Self-Node Remediation using the native out-of-service taint to release exclusive SCSI-3 locks automatically, while deploying storage-aware readiness probes so filesystems that flip to read-only fail fast before corrupting partition state."*
@@ -78,9 +78,9 @@ The **Platform Flight Simulator** serves as a digital twin and failure injection
 
 ---
 
-## 📋 Triage & Failure Modes Taxonomy (18 Scenarios)
+## 📋 Triage & Failure Modes Taxonomy (18 Failure Scenarios + 1 Nominal Baseline)
 
-This taxonomy organizes the 18 primary failure modes across modern cloud-native data ingestion pipelines.
+This taxonomy organizes the 18 primary failure modes across modern cloud-native data ingestion pipelines alongside a verified nominal baseline:
 
 > 📖 **Comprehensive Operational & Defense References:**
 > * **Defense Mission Technologies Capability:** [docs/MISSION_TECHNOLOGIES_CAPABILITY.md](docs/MISSION_TECHNOLOGIES_CAPABILITY.md) *(All-Domain Operations, Tactical Edge, Multi-Cluster Survivability, and Zero-Data-Loss Ingestion)*
@@ -98,7 +98,7 @@ Each scenario includes authentic kernel, container runtime, and Kubernetes log s
 | **Pipeline 1: Edge → Ingress** | **mTLS Handshake / Cert Expiration** | `SSLHandshakeException: PKIX path building failed: unable to find valid certification path` | `renew-cert` |
 | **Pipeline 1: Edge → Ingress** | **L4 NLB SYN Flood Throttling** | `TCP: request_sock_TCP: Possible SYN flooding on port 9092. Sending cookies.` | `tune-syn-backlog` |
 | **Node 2: Gateway Ingress** | **CoreDNS Internal Service Resolution** | `dial tcp: lookup kafka-broker-0 on 10.96.0.10:53: no such host (NXDOMAIN)` | `restart-coredns` |
-| **Node 2: Gateway Ingress** | **Target Group Backend Health Check** | `503 Service Temporarily Unavailable: no healthy upstream (probe timeout)` | `restart-broker` |
+| **Node 2: Gateway Ingress** | **Target Group Backend Health Check** | `dial tcp 10.244.2.89:9092: connect: connection refused (health check probe failure)` | `restart-broker` |
 | **Pipeline 2: Ingress → CNI** | **Path MTU Black Hole (Overlay Encap)** | `ICMP 3, 4: Destination Unreachable (Fragmentation Needed and DF set)` | `fix-mtu` |
 | **Pipeline 2: Ingress → CNI** | **Zero-Trust NetworkPolicy Ingress Block** | `packet dropped by policy 'deny-all-ingress': TCP 9092 not permitted` | `allow-netpol` |
 | **Node 3: CNI Overlay Wire** | **Netfilter Conntrack Table Saturation** | `dmesg: nf_conntrack: table full, dropping packet (262,144/262,144)` | `flush-conntrack` |
@@ -130,7 +130,7 @@ This flight simulator models the critical hand-offs across distributed edge-to-c
 * **Failure Mode:** OpenJDK defaults `-XX:MaxDirectMemorySize` to `-Xmx`, causing the JVM to believe it can allocate up to 8GB off-heap in addition to heap space. Because heap usage is healthy, Java never triggers GC. The Linux kernel cgroup subsystem fires an uncatchable `SIGKILL` (`Exit Code 137`). Application logs (`server.log`) show zero exceptions.
 * **Verification & Triage:** Inspect `dmesg -T | grep -i oom`, evaluate `cgroup.memory.current`, and clamp `-XX:MaxDirectMemorySize=2048m` alongside a 30% system cushion.
 
-### 3. The Frozen Disk (Pipeline 4: CSI VolumeAttachment Deadlock)
+### 3. The Stale Attachment (Pipeline 4: CSI VolumeAttachment Deadlock)
 * **Architectural Mechanics:** A stateful broker host crashes or drops its network lease abruptly while holding an exclusive `ReadWriteOnce` (RWO) storage attachment.
 * **Failure Mode:** The scheduler immediately reschedules the broker pod to a healthy worker node. However, the replacement pod hangs indefinitely in `ContainerCreating` with `FailedAttachVolume: Multi-Attach error`. The cloud/SAN storage controller rejects concurrent attachments to prevent dual-writer filesystem corruption.
 * **Verification & Triage:** Query `kubectl get volumeattachment`, verify node isolation out-of-band, and clear the stale `VolumeAttachment` API object (or automate via Node Health Check and Self-Node Remediation using the native `out-of-service` taint).
@@ -141,7 +141,7 @@ This flight simulator models the critical hand-offs across distributed edge-to-c
 
 These three documented production incidents demonstrate root-cause isolation across the physical wire, Linux kernel cgroups, and storage controllers:
 
-### Incident 01 (INC-409): Ungraceful Node Shutdown & CSI Multi-Attach Deadlock
+### Incident 01 (INC-409): The Stale Attachment — Ungraceful Node Shutdown & CSI Multi-Attach Deadlock
 * **Site:** `site-22-socom-airgap` | **Alert:** `KafkaIngestLagSpike`
 * **Symptoms:** Node `site22-worker-03` crashed with a kernel panic. The scheduler spun up `kafka-broker-2` on `site22-worker-05`, but the pod remained frozen in `ContainerCreating` for 12+ minutes. Field ops executed `kubectl delete pod` to reset it, causing the pod to freeze in `Terminating`.
 * **The Kernel/CSI Mechanics:** The dead node's kubelet died instantly without executing the container stop, filesystem unmount, or volume detach lifecycle hooks. The cloud storage controller (AWS EBS, Ceph RBD) maintained an exclusive `ReadWriteOnce` SCSI-3 reservation lock. The `attachdetach-controller` refused attachment to prevent dual-writer filesystem corruption. Deleting the pod only appended a `deletionTimestamp` without releasing the lock.
@@ -149,8 +149,10 @@ These three documented production incidents demonstrate root-cause isolation acr
   ```bash
   # 1. Verify multi-attach error event
   kubectl describe pod kafka-broker-2 -n lakehouse-platform
+
   # 2. Identify the stale lock
   kubectl get volumeattachments | grep site22-worker-03
+
   # 3. Automated Resolution (NHC + SNR Operator Pipeline):
   # Self-Node Remediation fences the node and applies the native taint:
   # node.kubernetes.io/out-of-service=nodeshutdown:NoExecute
@@ -162,12 +164,13 @@ These three documented production incidents demonstrate root-cause isolation acr
 ### Incident 02 (INC-410): The Invisible Reaper — cgroup v2 OOM vs. JVM DirectByteBuffer
 * **Site:** `site-08-gov-east` | **Alert:** `KafkaBrokerCrashLooping`
 * **Symptoms:** Broker 0 crashed repeatedly during the morning telemetry burst, running for 90 seconds before abruptly vanishing. `server.log` contained zero warnings, zero errors, and zero stack traces.
-* **The Kernel/JVM Mechanics:** In Java/OpenJDK, `-XX:MaxDirectMemorySize` defaults to `-Xmx` (6GB) if omitted. Under high telemetry bursts, Netty allocated off-heap direct memory via `ByteBuffer.allocateDirect()` directly from OS RAM for zero-copy socket reads. Heap (6GB) + Direct Memory (1.8GB+) + Metaspace/Thread Stacks exceeded the 8GiB cgroup limit. Because the JVM heap was under 6GB, no `OutOfMemoryError` was thrown; the Linux kernel cgroup monitor tripped and sent a non-catchable **`SIGKILL (Exit Code 137)`**, terminating the process instantly in kernel space.
+* **The Kernel/JVM Mechanics:** In Java/OpenJDK, `-XX:MaxDirectMemorySize` defaults to `-Xmx` (4GB) if omitted. Under high telemetry bursts, Netty allocated off-heap direct memory via `ByteBuffer.allocateDirect()` directly from OS RAM for zero-copy socket reads (3800MB). Combined with Heap (4096MB), Metaspace (256MB), and Thread Stacks (300MB), total Resident Set Size reached **8452MB**, breaching the 8GiB (8192MB) cgroup limit. Because the JVM heap was within its 4GB limit, Java never triggered GC; the Linux kernel cgroup monitor tripped and executed an uncatchable **`SIGKILL (Exit Code 137)`**, terminating the process instantly in kernel space.
 * **Triage & Remediation:**
   ```bash
   # 1. Confirm kernel assassination in host ring buffer
   dmesg -T | grep -E -i 'oom|kill|memory cgroup'
   # Output: Memory cgroup out of memory: Kill process 28412 (java) score 982
+
   # 2. Enforce explicit off-heap ceiling in container env:
   # -Xms4g -Xmx4g -XX:MaxDirectMemorySize=2048m -XX:+ExitOnOutOfMemoryError
   ```
@@ -181,12 +184,17 @@ These three documented production incidents demonstrate root-cause isolation acr
 * **Triage & Remediation:**
   ```bash
   # 1. Isolate mount flags and aborted journal
-  mount | grep '/var/lib/kafka' # shows (ro,relatime,errors=remount-ro)
+  mount | grep '/var/lib/kafka'
+
   dmesg -T | grep -E -i 'ext4|jbd2|remount'
+  # Output: EXT4-fs (device rbd0): Remounting filesystem read-only
+
   # 2. DO NOT remount directly on a dirty journal! Unmount first:
   kubectl scale statefulset kafka-broker --replicas=2 -n lakehouse-platform
+
   # 3. Replay journal and repair filesystem bitmaps on host:
   fsck.ext4 -fy /dev/rbd0
+
   # 4. Scale back up and harden readiness probe to verify disk writeability:
   kubectl scale statefulset kafka-broker --replicas=3 -n lakehouse-platform
   ```
@@ -207,17 +215,17 @@ These three documented production incidents demonstrate root-cause isolation acr
 Prerequisites: `node >= 18` and `npm >= 9`.
 
 ```bash
-# Clone the repository
+# 1. Clone the repository
 git clone https://github.com/FreeFades2Black/platform-flight-simulator.git
 cd platform-flight-simulator
 
-# Install dependencies
+# 2. Install dependencies
 npm install
 
-# Run automated state machine and taxonomy constraint tests
+# 3. Run automated state machine and taxonomy constraint tests
 npm test
 
-# Launch the Next.js interactive development server
+# 4. Launch the Next.js interactive development server
 npm run dev
 ```
 

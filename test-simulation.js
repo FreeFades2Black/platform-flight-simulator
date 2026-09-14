@@ -54,7 +54,7 @@ const EXPECTED_SCENARIOS = [
     id: 'node2-target-503',
     category: 'node-2',
     name: 'Node 2: Target Group Backend Health Check Failure',
-    signature: '503 Service Temporarily Unavailable: no healthy upstream',
+    signature: 'dial tcp 10.244.2.89:9092: connect: connection refused (health check probe failure)',
     remediation: 'restart-broker',
   },
   // Pipeline 2: Ingress to CNI Wire
@@ -149,9 +149,11 @@ const EXPECTED_SCENARIOS = [
   },
 ];
 
-// Test 1: Validate Taxonomy Count (1 Nominal + 18 Failure Scenarios = 19 Total)
-assert.strictEqual(EXPECTED_SCENARIOS.length, 19, 'Must register exactly 1 nominal + 18 failure scenarios');
-console.log('  [+] Taxonomy Count Check: 19 scenarios registered.');
+// Test 1: Validate Taxonomy Count (18 Failure Scenarios + 1 Nominal Baseline)
+const failureScenarios = EXPECTED_SCENARIOS.filter(s => s.id !== 'nominal');
+assert.strictEqual(failureScenarios.length, 18, 'Must register exactly 18 failure scenarios');
+assert.strictEqual(EXPECTED_SCENARIOS.length, 19, 'Must register exactly 18 failure scenarios + 1 nominal baseline');
+console.log('  [+] Taxonomy Count Check: Exactly 18 failure scenarios registered (+ 1 nominal baseline).');
 
 // Test 2: Verify 5 Nodes & 4 Interconnecting Pipelines Coverage
 const categories = new Set(EXPECTED_SCENARIOS.map(s => s.category));

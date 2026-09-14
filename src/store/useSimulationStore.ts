@@ -80,8 +80,8 @@ export const SCENARIOS: Record<FailureScenarioId, FailureScenarioInfo> = {
     componentName: 'Node 2: GATEWAY INGRESS',
     componentType: 'node',
     title: 'Target Group Backend Health Check Failure',
-    errorSignature: '503 Service Temporarily Unavailable: no healthy upstream',
-    description: 'The Ingress controller marks downstream broker pods as dead after continuous health check probe timeouts (Readiness probe failed with statuscode: 500).',
+    errorSignature: 'dial tcp 10.244.2.89:9092: connect: connection refused (health check probe failure)',
+    description: 'The L4 Ingress controller marks downstream Kafka broker targets as unhealthy after continuous TCP connection timeouts on port 9092.',
     suggestedCommands: ['kubectl describe ingress lakehouse-ingress', 'kubectl get endpoints kafka-headless', 'restart-broker'],
     remediationCommand: 'restart-broker',
   },
@@ -552,23 +552,23 @@ Resolving kafka-broker-0.kafka-headless.svc.cluster.local -> 10.244.2.14 [OK]!`;
       }
     }
 
-    // Node 2: Target 503
+    // Node 2: Target TCP Probe Failure
     if (activeScenario === 'node2-target-503') {
       if (trimmed.includes('describe ingress') || trimmed.includes('endpoints')) {
-        return `Default backend: default-http-backend:80 (<error: endpoints "default-http-backend" not found>)
+        return `Default backend: default-tcp-backend:9092 (<none: no healthy endpoints>)
 Rules:
-  Host                    Path  Backends
-  ingress.lakehouse.local /     kafka-headless:9092 (<none: no healthy endpoints>)
+  Host                    Port  Backends
+  ingress.lakehouse.local 9092  kafka-headless:9092 (<none: 0/3 targets healthy>)
 Annotations:
-  alb.ingress.kubernetes.io/healthcheck-path: /healthz
+  service.beta.kubernetes.io/aws-load-balancer-backend-protocol: tcp
 Events:
-  Warning  Unhealthy  Readiness probe failed: HTTP probe failed with statuscode: 500
-HTTP/1.1 503 Service Temporarily Unavailable: no healthy upstream`;
+  Warning  Unhealthy  Readiness probe failed: dial tcp 10.244.2.89:9092: connect: connection refused
+dial tcp 10.244.2.89:9092: connect: connection refused (health check probe failure)`;
       }
       if (trimmed === 'restart-broker' || trimmed.includes('restart')) {
         get().resolveActiveFailure();
         return `[+] Kafka broker pod probes passing. Target group marked HEALTHY (10.244.2.14:9092).
-503 cleared. Traffic forwarded!`;
+TCP probe restored. Ingress traffic forwarded!`;
       }
     }
 

@@ -44,8 +44,8 @@ The **Tactical Edge Platform Flight Simulator** serves as an interactive digital
 | :--- | :--- | :--- |
 | **01: The Wire Trap** | CNI overlay MTU 1550B vs. 1500B physical wire with `DF=1` | **Tactical WAN & Cross-Domain Comms:** Forward-deployed sensor forwarders push encrypted batch bursts over tactical SATCOM/radio bridges. Miscalculated encapsulation headers drop intelligence feeds without TCP RST notifications. |
 | **02: The Invisible Reaper** | Netty off-heap DirectByteBuffer breaching cgroup v2 ($137$) | **High-Density Sensor Telemetry:** Real-time EW/RF signal processing pods ingest multi-gigabit bursts. Off-heap native memory bypasses runtime garbage collection, triggering kernel termination without application logs. |
-| **03: The Frozen Disk** | Ungraceful node panic leaving SCSI-3 volume locks | **Contested Edge Node Survivability:** A tactical server node suffers sudden power disruption or battle damage. Automated fencing (NHC/SNR) with native out-of-service taints forces storage detachment and reschedules processing in <90 seconds. |
-| **04: Storage Stall & RO Mount** | JBD2 journal abort & filesystem remount read-only | **Ruggedized Edge Storage Integrity:** SAN/NVMe latency spikes during write-heavy surveillance recording cause the kernel to remount storage read-only, requiring storage-aware readiness health checks. |
+| **03: The Stale Attachment** | Ungraceful node panic leaving SCSI-3 volume locks | **Contested Edge Node Survivability:** A tactical server node suffers sudden power disruption or battle damage. Automated fencing (NHC/SNR) with native out-of-service taints forces storage detachment and reschedules processing in <90 seconds. |
+| **04: The Frozen Disk** | JBD2 journal abort & filesystem remount read-only | **Ruggedized Edge Storage Integrity:** SAN/NVMe latency spikes during write-heavy surveillance recording cause the kernel to remount storage read-only, requiring storage-aware readiness health checks. |
 
 ---
 
@@ -63,7 +63,7 @@ The **Tactical Edge Platform Flight Simulator** serves as an interactive digital
 * **Mission Impact:** The streaming broker vanishes with zero application logs, crashing ingestion pods right during critical intelligence bursts.
 * **Remediation:** Hard-clamp JVM off-heap memory to 2048m inside an 8GiB cgroup envelope, ensuring a 1.49GiB operating cushion that prevents kernel terminations.
 
-### Domain 3: Contested Edge Node Survivability & Automated Fencing
+### Domain 3: Contested Edge Node Survivability & The Stale Attachment
 * **Contested Condition:** A compute module in a ruggedized tactical vehicle or surface craft suffers physical power disruption, hardware stall, or hostile kinetic impact.
 * **Failure Physics:** The node dies unceremoniously. Cloud/SAN block storage controllers retain exclusive SCSI-3 Persistent Reservation locks. When the scheduler reschedules stateful pods to a surviving node, pods deadlock in `ContainerCreating` with `FailedAttachVolume: Multi-Attach error`.
 * **Mission Impact:** Mission-critical tracking and analytics state is locked on dead hardware. Manual triage commands cannot be executed in air-gapped or lights-out environments.
@@ -73,7 +73,7 @@ The **Tactical Edge Platform Flight Simulator** serves as an interactive digital
   ```
   The storage controller automatically tears down stale `VolumeAttachment` objects, mounting volumes onto healthy nodes in under 90 seconds.
 
-### Domain 4: Ruggedized Edge Storage Integrity & Journal Aborts
+### Domain 4: Ruggedized Edge Storage Integrity & The Frozen Disk
 * **Contested Condition:** High-rate sensor ingestion during vibration, power fluctuations, or heavy bus contention creates storage latency spikes exceeding block timeouts.
 * **Failure Physics:** The Linux kernel block driver throws `blk_update_request: I/O error`. The EXT4 journaling engine (JBD2) detects an aborted journal commit and triggers `errors=remount-ro`, flipping the mount to read-only.
 * **Mission Impact:** Broker pods pass basic TCP readiness probes because the process is alive in memory, but all produce requests fail with `EROFS` (Read-only file system).

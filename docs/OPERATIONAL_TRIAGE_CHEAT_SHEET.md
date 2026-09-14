@@ -13,7 +13,7 @@ Troubleshoot backward along the physical and logical data path:
 
 ### The 3 Golden Operational Truths
 * **Ingest & Edge:** *"At line rate, standard tooling hides failures. Synthetic health checks pass because small packets fit within a 1500-byte frame, but high-throughput telemetry batches get dropped at the overlay boundary because VXLAN adds 50 bytes of encapsulation with the DF bit set."*
-* **Compute & JVM:** *"When high connection counts surge into Kafka, checking server.log yields nothing. OpenJDK defaults -XX:MaxDirectMemorySize to -Xmx, meaning the JVM believes it can consume 12GB inside an 8GB container. The Linux kernel cgroup controller reaps the process with SIGKILL 137 from the outside."*
+* **Compute & JVM:** *"When high connection counts surge into Kafka, checking server.log yields nothing. OpenJDK defaults -XX:MaxDirectMemorySize to -Xmx (4GB), meaning the JVM believes it can allocate 8GB of heap and off-heap memory alone inside an 8GB container. Combined with native thread stacks and metaspace, total RSS reaches 8452MB, and the Linux kernel cgroup controller reaps the process with SIGKILL 137 from the outside."*
 * **Block Storage & Recovery:** *"When stateful nodes fail ungracefully, you can't rely on manual kubectl delete commands at 2:00 AM. We automate node fencing via Node Health Check and Self-Node Remediation using the native out-of-service taint to release exclusive SCSI-3 locks automatically, while deploying storage-aware readiness probes so filesystems that flip to read-only fail fast before corrupting partition state."*
 
 ---
@@ -52,9 +52,9 @@ Troubleshoot backward along the physical and logical data path:
   - *Error:* `dial tcp: lookup kafka-broker-0: no such host (NXDOMAIN)`.
   - *Triage:* `dig kafka-broker-0.kafka-headless.svc.cluster.local @10.96.0.10`
   - *Remediation:* `restart-coredns` (`kubectl rollout restart deployment/coredns -n kube-system`)
-- **Scenario 3.2: Target Group Health Check Failure (`node2-target-503`)**
-  - *Mechanism:* Downstream brokers fail readiness probes; Ingress drops all backends from pool.
-  - *Error:* `HTTP/1.1 503 Service Temporarily Unavailable: no healthy upstream`.
+- **Scenario 3.2: Target Group Backend Health Check Failure (`node2-target-503`)**
+  - *Mechanism:* Downstream Kafka brokers fail TCP port 9092 probes; Ingress controller drops all backends from pool.
+  - *Error:* `dial tcp 10.244.2.89:9092: connect: connection refused (health check probe failure)`.
   - *Triage:* `kubectl get endpoints kafka-headless -n lakehouse-platform`
   - *Remediation:* `restart-broker` (`kubectl rollout restart statefulset/kafka -n lakehouse-platform`)
 
@@ -104,7 +104,7 @@ Troubleshoot backward along the physical and logical data path:
 
 ## 7. Node 4: Kafka Broker
 - **Scenario 7.1: cgroup v2 Hard Ceiling Breach (`node4-cgroup-oom`)**
-  - *Mechanism:* `-XX:MaxDirectMemorySize` defaults to `-Xmx` (6GB). Heap (6GB) + Direct Memory (1.8GB+) + Stacks > 8GB limit.
+  - *Mechanism:* `-XX:MaxDirectMemorySize` defaults to `-Xmx` (4GB). Heap (4096MB) + Direct Memory (3800MB) + Metaspace (256MB) + Stacks (300MB) = 8452MB > 8192MB limit.
   - *Error:* Kernel sends uncatchable `SIGKILL (Exit Code 137)`. Zero lines in `server.log`.
   - *Triage:* `dmesg -T | grep -E -i 'oom|kill|memory cgroup'` and `kubectl describe pod kafka-broker-0`
   - *Remediation:* `resolve-oom` (`-Xms4g -Xmx4g -XX:MaxDirectMemorySize=2048m -XX:+ExitOnOutOfMemoryError`)

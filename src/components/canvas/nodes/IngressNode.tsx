@@ -37,7 +37,7 @@ export const IngressNode = memo(() => {
             ? 'bg-red-500/20 text-red-400 border-red-500/40'
             : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
         }`}>
-          {isDnsError ? 'NXDOMAIN' : isTarget503 ? '503 UNHEALTHY' : 'READY'}
+          {isDnsError ? 'NXDOMAIN' : isTarget503 ? 'TCP REFUSED' : 'READY'}
         </span>
       </div>
 

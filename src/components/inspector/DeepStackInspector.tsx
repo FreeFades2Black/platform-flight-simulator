@@ -176,7 +176,7 @@ export const DeepStackInspector: React.FC = () => {
                   ? 'bg-red-500/20 text-red-400 border border-red-500/30'
                   : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
               }`}>
-                {coreDnsStatus !== 'RESOLVING' ? 'DNS RESOLUTION FAIL' : ingressTargetStatus !== 'HEALTHY' ? '503 BACKEND DOWN' : 'READY'}
+                {coreDnsStatus !== 'RESOLVING' ? 'DNS RESOLUTION FAIL' : ingressTargetStatus !== 'HEALTHY' ? 'TCP PROBE REFUSED' : 'READY'}
               </span>
             </div>
 
@@ -200,7 +200,7 @@ export const DeepStackInspector: React.FC = () => {
               <div className="flex justify-between">
                 <span className="text-slate-400">HTTP Probe Status:</span>
                 <span className={ingressTargetStatus === 'HEALTHY' ? 'text-slate-200' : 'text-red-400 font-bold'}>
-                  {ingressTargetStatus === 'HEALTHY' ? 'HTTP 200 OK (/healthz)' : 'HTTP 503 Service Unavailable'}
+                  {ingressTargetStatus === 'HEALTHY' ? 'TCP 9092 OPEN (SYN-ACK)' : 'TCP 9092 CONNECTION REFUSED'}
                 </span>
               </div>
             </div>
