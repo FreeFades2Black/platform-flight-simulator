@@ -166,7 +166,7 @@ export const SCENARIOS: Record<FailureScenarioId, FailureScenarioInfo> = {
     componentType: 'node',
     title: 'cgroup v2 Hard Ceiling Breach (The OOM Reaper)',
     errorSignature: 'dmesg: Memory cgroup out of memory: Kill process 28412 (java) score 982 -> Exit Code 137',
-    description: 'Combined memory (4096MB JVM Heap + 4350MB Netty direct buffers) exceeds the 8192MB Linux cgroup hard limit. The kernel OOM-killer sends SIGKILL (Signal 9).',
+    description: 'Combined memory (4096MB JVM Heap + 3800MB Netty direct buffers + 256MB Metaspace + 300MB Stacks) reaches 8452MB, exceeding the 8192MB Linux cgroup limit. The kernel OOM-killer sends SIGKILL (Signal 9).',
     suggestedCommands: ['dmesg -T | grep -i oom', 'kubectl describe pod kafka-broker-0', 'resolve-oom'],
     remediationCommand: 'resolve-oom',
   },
@@ -366,7 +366,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
         updates.saslAuthenticated = false;
         break;
       case 'node4-cgroup-oom':
-        updates.nettyDirectMb = 4350;
+        updates.nettyDirectMb = 4356;
         updates.podStatus = 'CrashLoopBackOff';
         updates.podExitCode = 137;
         break;

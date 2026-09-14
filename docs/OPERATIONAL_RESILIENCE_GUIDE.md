@@ -58,10 +58,11 @@ Ground every triage procedure and architectural hardening effort in these three 
 * **The Architecture:**
   ```
   cgroup v2 Hard Ceiling: 8192 MB (8 GiB)
-  ┌──────────────────────────────────────────────┬────────────────────────────┐
-  │ JVM Heap (-Xmx4g): 4096 MB                   │ Netty Direct: 4350 MB      │
-  └──────────────────────────────────────────────┴────────────────────────────┘
-  Total Memory: 8446 MB > 8192 MB Limit -> KERNEL OOM-KILLER SIGKILL 137
+  ┌──────────────────────────────────────────┬─────────────────────────────┐
+  │ JVM Heap (-Xmx4g): 4096 MB               │ DirectByteBuffer: 3800 MB   │ ──► [cgroup ceiling breached]
+  │ (Monitored by JVM GC - Within limit)     │ + Metaspace + Stacks: 556 MB│     KERNEL SENDS SIGKILL (137)
+  └──────────────────────────────────────────┴─────────────────────────────┘
+  Total Memory: 8452 MB > 8192 MB Limit -> KERNEL OOM-KILLER SIGKILL 137
   ```
 * **Architectural Mechanics:**
   Container memory ceiling is pinned to 8192MB. JVM Heap is allocated 4096MB (`-Xmx4g`). High concurrent connection volume triggers Netty off-heap direct socket buffers (`DirectByteBuffer`) to expand to 4350MB for zero-copy I/O. Total process Resident Set Size (RSS) hits 8446MB.

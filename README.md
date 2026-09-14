@@ -13,7 +13,7 @@
 
 ## 🌐 Mission Context: High-Reliability Data Fabric for All-Domain Dominance
 
-Modern multi-domain systems—spanning un-crewed surface/undersea vehicles (USVs/UUVs), tactical EW sensors, and remote radar nodes—rely on continuous telemetry streams across degraded WAN environments. 
+Modern multi-domain systems—spanning un-crewed surface/undersea vehicles (USVs/UUVs), tactical EW sensors, and remote radar nodes—rely on continuous telemetry streams across degraded WAN environments.
 
 Standard cloud tooling assumes stable connectivity, ample memory, and clean tear-downs. In contested, tactical-edge environments, those assumptions fail:
 * **Network frames drop silently** over encrypted overlay tunnels when MTUs mismatch across tactical radio/SATCOM links.
@@ -22,7 +22,9 @@ Standard cloud tooling assumes stable connectivity, ample memory, and clean tear
 
 The **Platform Flight Simulator** serves as a digital twin and failure injection testbed that deterministically reproduces, diagnoses, and automates recovery across the entire sensor-to-lakehouse pipeline.
 
-### 🎯 Technical Scenarios Mapped to Defense & Tactical Edge Domains
+---
+
+## 🎯 Technical Scenarios Mapped to Defense & Tactical Edge Domains
 
 | Core Simulation Scenario | Technical Mechanism | Defense & Operational Mission Context |
 | :--- | :--- | :--- |
@@ -43,20 +45,20 @@ The **Platform Flight Simulator** serves as a digital twin and failure injection
 
 ## 💡 The Senior Platform Architectural Tenets
 
-> ### 🌐 1. The Ingest & Edge Layer
+### 🌐 1. The Ingest & Edge Layer
 > *"At line rate, standard tooling hides failures. Synthetic health checks pass because small packets fit within a 1500-byte frame, but high-throughput telemetry batches get dropped at the overlay boundary because VXLAN adds 50 bytes of encapsulation with the DF bit set."*
->
-> ### ⚙️ 2. The Compute & JVM Boundary
-> *"When high connection counts surge into Kafka, checking server.log yields nothing. OpenJDK defaults -XX:MaxDirectMemorySize to -Xmx (4GB), meaning the JVM believes it can allocate 8GB of heap and off-heap memory alone inside an 8GB container. Combined with native thread stacks and metaspace, total RSS reaches 8452MB, and the Linux kernel cgroup controller reaps the process with SIGKILL 137 from the outside."*
->
-> ### 🛡️ 3. The Block Storage & Recovery Plane
-> *"When stateful nodes fail ungracefully, you can't rely on manual kubectl delete commands at 2:00 AM. We automate node fencing via Node Health Check and Self-Node Remediation using the native out-of-service taint to release exclusive SCSI-3 locks automatically, while deploying storage-aware readiness probes so filesystems that flip to read-only fail fast before corrupting partition state."*
+
+### ⚙️ 2. The Compute & JVM Boundary
+> *"When high connection counts surge into Kafka, checking `server.log` yields nothing. OpenJDK defaults `-XX:MaxDirectMemorySize` to `-Xmx` (4GB), meaning the JVM believes it can allocate 8GB of heap and off-heap memory alone inside an 8GB container. Combined with native thread stacks and metaspace, total RSS reaches 8452MB, and the Linux kernel cgroup controller reaps the process with SIGKILL 137 from the outside."*
+
+### 🛡️ 3. The Block Storage & Recovery Plane
+> *"When stateful nodes fail ungracefully, you can't rely on manual `kubectl delete` commands at 2:00 AM. We automate node fencing via Node Health Check and Self-Node Remediation using the native `out-of-service` taint to release exclusive SCSI-3 locks automatically, while deploying storage-aware readiness probes so filesystems that flip to read-only fail fast before corrupting partition state."*
 
 ---
 
 ## 🏛️ System Topology (5 Nodes · 4 Pipelines)
 
-```
+```text
 [ NODE 1: EDGE TELEMETRY ]
            │
       ( Pipeline 1: mTLS Handshake & NLB SYN Flood )
@@ -69,7 +71,7 @@ The **Platform Flight Simulator** serves as a digital twin and failure injection
            │
       ( Pipeline 3: DirectByteBuffer & SASL SCRAM Auth )
            ▼
-[ NODE 4: KAFKA-BROKER-0 (Node B Storage AZ1) ]
+[ NODE 4: KAFKA BROKER CLUSTER (kafka-broker-0..2) ]
            │
       ( Pipeline 4: Multi-Attach Lock & CSI gRPC Timeout )
            ▼
@@ -89,8 +91,6 @@ This taxonomy organizes the 18 primary failure modes across modern cloud-native 
 > * **Cross-Layer Debugging Article:** [docs/cross_layer_debugging_mechanics.md](docs/cross_layer_debugging_mechanics.md) *(Where Standard Telemetry Lies: Deep dive across CNI MTU, JVM off-heap, and CSI storage deadlocks)*
 > * **Terminal CLI Cheat Sheet:** [docs/OPERATIONAL_TRIAGE_CHEAT_SHEET.md](docs/OPERATIONAL_TRIAGE_CHEAT_SHEET.md) *(Formatted for terminal review via nano/less across all 9 topology stages)*
 
-Each scenario includes authentic kernel, container runtime, and Kubernetes log signatures alongside deterministic triage and remediation playbooks:
-
 | Topology Component | Failure Mode | Authentic Error Signature / Kernel Log | Triage & Remediation Command |
 | :--- | :--- | :--- | :--- |
 | **Node 1: Edge Telemetry** | **Local Buffer Ring Exhaustion** | `BufferOverflowException: queue full (10000/10000 events)` | `iot-agent flush-buffer` |
@@ -104,36 +104,41 @@ Each scenario includes authentic kernel, container runtime, and Kubernetes log s
 | **Node 3: CNI Overlay Wire** | **Netfilter Conntrack Table Saturation** | `dmesg: nf_conntrack: table full, dropping packet (262,144/262,144)` | `flush-conntrack` |
 | **Node 3: CNI Overlay Wire** | **Socket Buffer Ring Overflow** | `flannel.1: RX dropped: 128492 (NETDEV WATCHDOG: transmit queue timed out)` | `tune-ring-buffer` |
 | **Pipeline 3: CNI → Broker** | **DirectByteBuffer Native Allocation Stall** | `java.lang.OutOfMemoryError: Direct buffer memory (SocketChannel.read failed)` | `tune-direct-memory` |
-| **Pipeline 3: CNI → Broker** | **Broker SSL/SASL SCRAM Authentication**| `SaslAuthenticationException: Failed to configure SASL client: Client unable to authenticate` | `rotate-sasl` |
+| **Pipeline 3: CNI → Broker** | **Broker SSL/SASL SCRAM Authentication** | `SaslAuthenticationException: Failed to configure SASL client: Client unable to authenticate` | `rotate-sasl` |
 | **Node 4: Kafka Broker** | **cgroup v2 Hard Ceiling Breach (OOM)** | `dmesg: Memory cgroup out of memory: Kill process 28412 (java) score 982 -> Exit Code 137` | `resolve-oom` |
-| **Node 4: Kafka Broker** | **Under-Replicated Partitions (ISR Drop)**| `UnderReplicatedPartitions > 0: In-sync replicas (1) is less than configured minimum (2)` | `reassign-partitions` |
-| **Pipeline 4: Broker → Storage**| **Exclusive Lock Contention (Multi-Attach)**| `FailedAttachVolume: VolumeAttachment is already attached to node-b-storage-az1` | `unlock-storage` |
-| **Pipeline 4: Broker → Storage**| **CSI Driver gRPC Controller Timeout** | `rpc error: code = DeadlineExceeded desc = context deadline exceeded while awaiting headers` | `restart-csi` |
-| **Node 5: CSI Volume** | **Kernel Disk I/O Stall (Read-Only Mount)**| `EXT4-fs error (device rbd0): deleted inode referenced -> Remounting filesystem read-only` | `fsck-remount-rw` |
-| **Node 5: CSI Volume** | **Volume Quota Depletion (Zero Inodes/ENOSPC)**| `KafkaStorageException: No space left on device (0 free inodes / 100% capacity)` | `clean-log-dirs` |
+| **Node 4: Kafka Broker** | **Under-Replicated Partitions (ISR Drop)** | `UnderReplicatedPartitions > 0: In-sync replicas (1) is less than configured minimum (2)` | `reassign-partitions` |
+| **Pipeline 4: Broker → Storage** | **Exclusive Lock Contention (Multi-Attach)** | `FailedAttachVolume: VolumeAttachment is already attached to node-b-storage-az1` | `unlock-storage` |
+| **Pipeline 4: Broker → Storage** | **CSI Driver gRPC Controller Timeout** | `rpc error: code = DeadlineExceeded desc = context deadline exceeded while awaiting headers` | `restart-csi` |
+| **Node 5: CSI Volume** | **Kernel Disk I/O Stall (Read-Only Mount)** | `EXT4-fs error (device rbd0): deleted inode referenced -> Remounting filesystem read-only` | `fsck-remount-rw` |
+| **Node 5: CSI Volume** | **Volume Quota Depletion (Zero Inodes/ENOSPC)** | `KafkaStorageException: No space left on device (0 free inodes / 100% capacity)` | `clean-log-dirs` |
 
 ---
 
 ## 🔬 Operational Architecture & Incident Dynamics
 
-Complete post-incident analysis, failure mechanics, and verification runbooks are documented in `docs/OPERATIONAL_RESILIENCE_GUIDE.md`.
+Full failure mechanics and verification runbooks are documented in [`docs/OPERATIONAL_RESILIENCE_GUIDE.md`](docs/OPERATIONAL_RESILIENCE_GUIDE.md).
 
 This flight simulator models the critical hand-offs across distributed edge-to-core data pipelines, exposing the failure boundaries where standard telemetry and application logs fail to report ground truth:
 
 ### 1. The Wire Trap (Pipeline 2 → 3: Ingress to CNI Overlay)
-* **Architectural Mechanics:** Physical MTU is constrained to 1500B. Line-rate telemetry batches generate 1460B payload + 40B TCP/IP headers (1500B wire frame with `DF=1`). Flannel VXLAN adds a 50B encapsulation header, pushing the total wire frame to 1550B.
+* **Architectural Mechanics:** Physical MTU is constrained to 1500B. Line-rate telemetry batches generate 1460B payload + 40B TCP/IP headers (1500B wire frame with `DF=1`). Flannel VXLAN adds a 50B encapsulation header, pushing the total wire frame size to 1550B.
 * **Failure Mode:** Synthetic ping tests pass because small payloads never hit the MTU ceiling. Under line-rate traffic, un-clamped overlay interfaces silently drop frames. When middlebox firewalls drop `ICMP Type 3, Code 4` (Fragmentation Needed), connections black-hole without sending `TCP RST` or `FIN`.
 * **Verification & Triage:** Run `tcpdump -nnvv -i eth0`, monitor `flannel.1` for `FRAME_TOO_LONG` drops, and clamp CNI overlay MTU to 1420B (`fix-mtu`).
 
 ### 2. The Invisible Reaper (Node 4: cgroup v2 vs Application Logs)
-* **Architectural Mechanics:** Container memory ceiling is pinned to 8192MB. JVM Heap is allocated 4096MB (`-Xmx4g`). Under high concurrent connection spikes, Netty off-heap direct socket buffers (`DirectByteBuffer`) expand to 4350MB. Total process Resident Set Size (RSS) hits 8446MB.
-* **Failure Mode:** OpenJDK defaults `-XX:MaxDirectMemorySize` to `-Xmx`, causing the JVM to believe it can allocate up to 8GB off-heap in addition to heap space. Because heap usage is healthy, Java never triggers GC. The Linux kernel cgroup subsystem fires an uncatchable `SIGKILL` (`Exit Code 137`). Application logs (`server.log`) show zero exceptions.
+* **Architectural Mechanics:** Container memory ceiling is pinned to 8192MB. JVM Heap is allocated 4096MB (`-Xmx4g`). Under high concurrent connection spikes, Netty off-heap direct socket buffers (`DirectByteBuffer`) expand to 3800MB. Combined with metaspace (256MB) and thread stacks (300MB), total process Resident Set Size (RSS) hits **8452MB**.
+* **Failure Mode:** OpenJDK defaults `-XX:MaxDirectMemorySize` to `-Xmx` (4GB), causing the JVM to believe it can allocate up to 8GB of heap and off-heap memory alone inside an 8GB container. Because heap usage is within its 4GB limit, Java never triggers GC. The Linux kernel cgroup subsystem fires an uncatchable `SIGKILL` (`Exit Code 137`). Application logs (`server.log`) show zero exceptions.
 * **Verification & Triage:** Inspect `dmesg -T | grep -i oom`, evaluate `cgroup.memory.current`, and clamp `-XX:MaxDirectMemorySize=2048m` alongside a 30% system cushion.
 
 ### 3. The Stale Attachment (Pipeline 4: CSI VolumeAttachment Deadlock)
 * **Architectural Mechanics:** A stateful broker host crashes or drops its network lease abruptly while holding an exclusive `ReadWriteOnce` (RWO) storage attachment.
 * **Failure Mode:** The scheduler immediately reschedules the broker pod to a healthy worker node. However, the replacement pod hangs indefinitely in `ContainerCreating` with `FailedAttachVolume: Multi-Attach error`. The cloud/SAN storage controller rejects concurrent attachments to prevent dual-writer filesystem corruption.
 * **Verification & Triage:** Query `kubectl get volumeattachment`, verify node isolation out-of-band, and clear the stale `VolumeAttachment` API object (or automate via Node Health Check and Self-Node Remediation using the native `out-of-service` taint).
+
+### 4. The Frozen Disk (Node 5: Kernel Block Stall & EXT4 Read-Only Remount)
+* **Architectural Mechanics:** Storage fabric write latency exceeds the Linux SCSI block I/O timeout threshold (`blk_update_request: I/O error`).
+* **Failure Mode:** The EXT4 Journaling Block Device (JBD2) aborts an in-flight metadata commit. To prevent silent metadata corruption, the Linux kernel executes its `errors=remount-ro` safety policy, remounting the superblock read-only. Pod status remains green and passes TCP probes, but record append calls fail with `EROFS`.
+* **Verification & Triage:** Inspect host `dmesg -T` for JBD2 journal aborts, unmount the volume, execute `fsck.ext4 -fy /dev/rbd0` to replay the journal, and configure write-aware readiness health probes.
 
 ---
 
@@ -143,8 +148,8 @@ These three documented production incidents demonstrate root-cause isolation acr
 
 ### Incident 01 (INC-409): The Stale Attachment — Ungraceful Node Shutdown & CSI Multi-Attach Deadlock
 * **Site:** `site-22-socom-airgap` | **Alert:** `KafkaIngestLagSpike`
-* **Symptoms:** Node `site22-worker-03` crashed with a kernel panic. The scheduler spun up `kafka-broker-2` on `site22-worker-05`, but the pod remained frozen in `ContainerCreating` for 12+ minutes. Field ops executed `kubectl delete pod` to reset it, causing the pod to freeze in `Terminating`.
-* **The Kernel/CSI Mechanics:** The dead node's kubelet died instantly without executing the container stop, filesystem unmount, or volume detach lifecycle hooks. The cloud storage controller (AWS EBS, Ceph RBD) maintained an exclusive `ReadWriteOnce` SCSI-3 reservation lock. The `attachdetach-controller` refused attachment to prevent dual-writer filesystem corruption. Deleting the pod only appended a `deletionTimestamp` without releasing the lock.
+* **Symptoms:** Node `site22-worker-03` crashed with a kernel panic. The scheduler spun up `kafka-broker-2` on `site22-worker-05`, but the pod remained frozen in `ContainerCreating` for 12+ minutes. Field ops executed `kubectl delete pod`, freezing the pod in `Terminating`.
+* **The Kernel/CSI Mechanics:** The dead node's kubelet died without executing container stop, filesystem unmount, or volume detach lifecycle hooks. The cloud storage controller maintained an exclusive RWO SCSI-3 reservation lock. The `attachdetach-controller` refused attachment to prevent dual-writer corruption.
 * **Triage & Remediation:**
   ```bash
   # 1. Verify multi-attach error event
@@ -156,22 +161,22 @@ These three documented production incidents demonstrate root-cause isolation acr
   # 3. Automated Resolution (NHC + SNR Operator Pipeline):
   # Self-Node Remediation fences the node and applies the native taint:
   # node.kubernetes.io/out-of-service=nodeshutdown:NoExecute
-  # attachdetach-controller reconciles and force-detaches the volume at T+60s automatically.
+  # attachdetach-controller reconciles and force-detaches the volume automatically.
   ```
 
 ---
 
 ### Incident 02 (INC-410): The Invisible Reaper — cgroup v2 OOM vs. JVM DirectByteBuffer
 * **Site:** `site-08-gov-east` | **Alert:** `KafkaBrokerCrashLooping`
-* **Symptoms:** Broker 0 crashed repeatedly during the morning telemetry burst, running for 90 seconds before abruptly vanishing. `server.log` contained zero warnings, zero errors, and zero stack traces.
-* **The Kernel/JVM Mechanics:** In Java/OpenJDK, `-XX:MaxDirectMemorySize` defaults to `-Xmx` (4GB) if omitted. Under high telemetry bursts, Netty allocated off-heap direct memory via `ByteBuffer.allocateDirect()` directly from OS RAM for zero-copy socket reads (3800MB). Combined with Heap (4096MB), Metaspace (256MB), and Thread Stacks (300MB), total Resident Set Size reached **8452MB**, breaching the 8GiB (8192MB) cgroup limit. Because the JVM heap was within its 4GB limit, Java never triggered GC; the Linux kernel cgroup monitor tripped and executed an uncatchable **`SIGKILL (Exit Code 137)`**, terminating the process instantly in kernel space.
+* **Symptoms:** Broker 0 crashed repeatedly during the morning telemetry burst, running for 90 seconds before disappearing. `server.log` contained zero errors or stack traces.
+* **The Kernel/JVM Mechanics:** In OpenJDK, `-XX:MaxDirectMemorySize` defaults to `-Xmx` (4GB) if omitted. Under high telemetry bursts, Netty allocated direct memory via `ByteBuffer.allocateDirect()` from OS RAM (3800MB). Combined with Heap (4096MB), Metaspace (256MB), and Thread Stacks (300MB), total RSS hit **8452MB**, breaching the 8192MB cgroup limit. The Linux kernel cgroup monitor fired an uncatchable **`SIGKILL (Exit Code 137)`**.
 * **Triage & Remediation:**
   ```bash
-  # 1. Confirm kernel assassination in host ring buffer
+  # 1. Confirm kernel termination in host ring buffer
   dmesg -T | grep -E -i 'oom|kill|memory cgroup'
   # Output: Memory cgroup out of memory: Kill process 28412 (java) score 982
 
-  # 2. Enforce explicit off-heap ceiling in container env:
+  # 2. Enforce explicit off-heap ceiling in container environment:
   # -Xms4g -Xmx4g -XX:MaxDirectMemorySize=2048m -XX:+ExitOnOutOfMemoryError
   ```
 
@@ -180,7 +185,7 @@ These three documented production incidents demonstrate root-cause isolation acr
 ### Incident 03 (INC-411): The Frozen Disk — Kernel Block Stall & EXT4 Read-Only Remount
 * **Site:** `site-41-forward-enclave` | **Alert:** `KafkaProduceRequestFailures`
 * **Symptoms:** Producers failed with `KafkaStorageException: Read-only file system`. The broker container reported `Running` and passed its TCP readiness probe, but touching `/var/lib/kafka/data/test` failed with `Read-only file system`.
-* **The Kernel/Block Layer Mechanics:** Storage network latency exceeded the Linux SCSI block I/O timeout threshold (`blk_update_request: I/O error`). The EXT4 Journaling Block Device (JBD2) detected an aborted journal commit. To protect filesystem metadata against irreversible corruption, the Linux kernel executed its safety policy (**`errors=remount-ro`**), immediately flipping the mounted superblock to Read-Only (`ro`). The process remained in RAM and answered TCP probes, but all segment append syscalls (`pwrite64`) failed with `EROFS`.
+* **The Kernel/Block Layer Mechanics:** Storage network latency exceeded the block I/O timeout threshold (`blk_update_request: I/O error`). JBD2 aborted the journal commit. The Linux kernel executed `errors=remount-ro`, flipping the superblock to `ro`. The process remained running in RAM, but all `pwrite64` syscalls failed with `EROFS`.
 * **Triage & Remediation:**
   ```bash
   # 1. Isolate mount flags and aborted journal
@@ -195,9 +200,11 @@ These three documented production incidents demonstrate root-cause isolation acr
   # 3. Replay journal and repair filesystem bitmaps on host:
   fsck.ext4 -fy /dev/rbd0
 
-  # 4. Scale back up and harden readiness probe to verify disk writeability:
+  # 4. Scale back up and verify health:
   kubectl scale statefulset kafka-broker --replicas=3 -n lakehouse-platform
   ```
+
+---
 
 ## 🛡️ Enterprise Platform Reliability Standards Matrix
 
@@ -229,7 +236,7 @@ npm test
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser to enter the flight simulator!
+Open [http://localhost:3000](http://localhost:3000) in your browser to enter the flight simulator.
 
 ---
 

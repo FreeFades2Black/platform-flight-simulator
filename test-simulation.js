@@ -179,10 +179,14 @@ console.log('  [+] Scenario pipe2-mtu-blackhole: MTU clamp math verified (1550B 
 
 // 3.2: cgroup v2 Linux Kernel OOM Ceiling
 const jvmHeap = 4096;
-const directBufferChaos = 4350;
+const directBufferChaos = 3800;
+const metaspace = 256;
+const threadStacks = 300;
+const totalRss = jvmHeap + directBufferChaos + metaspace + threadStacks; // 8452 MB
 const cgroupLimit = 8192;
-assert.strictEqual(jvmHeap + directBufferChaos > cgroupLimit, true, 'Off-heap Netty + Heap memory must breach 8GiB cgroup');
-console.log('  [+] Scenario node4-cgroup-oom: cgroup memory ceiling breach verified (8446MB > 8192MB limit).');
+assert.strictEqual(totalRss, 8452, 'Total process RSS must equal 8452 MB');
+assert.strictEqual(totalRss > cgroupLimit, true, 'Total memory must breach 8192 MB (8 GiB) cgroup ceiling');
+console.log('  [+] Scenario node4-cgroup-oom: cgroup memory ceiling breach verified (8452MB > 8192MB limit).');
 
 // 3.3: CSI Multi-Attach Lock
 const activeNodeAttachment = 'node-b-storage-az1';
