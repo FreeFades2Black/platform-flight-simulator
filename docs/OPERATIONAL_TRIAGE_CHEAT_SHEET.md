@@ -2,7 +2,8 @@
 ### Fast CLI Reference for Platform Engineers & SREs Debugging Production Incidents
 
 Detailed 18-scenario runbook: `docs/COMPLETE_FAILURE_TAXONOMY_RUNBOOK.md`  
-Architecture Deep-Dive: `docs/OPERATIONAL_RESILIENCE_GUIDE.md`
+Architecture Deep-Dive: `docs/OPERATIONAL_RESILIENCE_GUIDE.md`  
+Cross-Layer Engineering Article: `docs/cross_layer_debugging_mechanics.md`
 
 ## Core Triage Mental Model
 Troubleshoot backward along the physical and logical data path:

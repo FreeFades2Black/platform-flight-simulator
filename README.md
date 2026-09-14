@@ -61,6 +61,7 @@ This taxonomy organizes the 18 primary failure modes across modern cloud-native 
 > 📖 **Comprehensive Operational References:**
 > * **Exhaustive 18-Scenario Runbook:** [docs/COMPLETE_FAILURE_TAXONOMY_RUNBOOK.md](docs/COMPLETE_FAILURE_TAXONOMY_RUNBOOK.md) *(Full failure physics, log snippets, step-by-step CLI commands, and verification for all 18 scenarios)*
 > * **Operational Resilience & Architecture Guide:** [docs/OPERATIONAL_RESILIENCE_GUIDE.md](docs/OPERATIONAL_RESILIENCE_GUIDE.md) *(Cross-layer diagnostics, kernel cgroups, and automated node remediation architecture)*
+> * **Cross-Layer Debugging Article:** [docs/cross_layer_debugging_mechanics.md](docs/cross_layer_debugging_mechanics.md) *(Where Standard Telemetry Lies: Deep dive across CNI MTU, JVM off-heap, and CSI storage deadlocks)*
 > * **Terminal CLI Cheat Sheet:** [docs/OPERATIONAL_TRIAGE_CHEAT_SHEET.md](docs/OPERATIONAL_TRIAGE_CHEAT_SHEET.md) *(Formatted for terminal review via nano/less across all 9 topology stages)*
 
 Each scenario includes authentic kernel, container runtime, and Kubernetes log signatures alongside deterministic triage and remediation playbooks:
