@@ -112,7 +112,7 @@ export const MissionNav: React.FC = () => {
               </span>
             </div>
             <p className="text-[11px] text-slate-400 font-mono">
-              High-Fidelity Kubernetes & Lakehouse Ingestion Sandbox (5 Nodes · 4 Pipelines · 18 Scenarios)
+              Tactical Edge & Multi-Domain Data Fabric (5 Nodes · 4 Pipelines · 18 Scenarios)
             </p>
           </div>
         </div>

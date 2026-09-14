@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Platform Flight Simulator | Digital Twin & Guided Sandbox',
-  description: 'Interactive scenario-driven platform flight simulator for Kubernetes, CNI packet routing, off-heap OOM, CSI storage locks, and etcd finalizers.',
+  title: 'Tactical Edge Platform Flight Simulator | Multi-Domain Data Fabric',
+  description: 'High-Fidelity Digital Twin for Stress-Testing Disconnected, Intermittent, and Edge-to-Core Ingestion Pipelines across Multi-Tenant Defense Clusters.',
 };
 
 export default function RootLayout({

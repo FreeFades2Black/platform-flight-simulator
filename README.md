@@ -1,11 +1,35 @@
-# 🕹️ Platform Flight Simulator | Digital Twin & Guided Sandbox
+# 🛡️ Tactical Edge Platform Flight Simulator: Multi-Domain Data Fabric & Incident Resilience Engine
 
 [![Platform Flight Simulator CI](https://github.com/FreeFades2Black/platform-flight-simulator/actions/workflows/ci.yml/badge.svg)](https://github.com/FreeFades2Black/platform-flight-simulator/actions)
 [![Live Interactive Demo](https://img.shields.io/badge/Live%20Demo-GitHub%20Pages-00e5ff?style=for-the-badge&logo=github)](https://freefades2black.github.io/platform-flight-simulator/)
 [![Architecture](https://img.shields.io/badge/Architecture-5%20Nodes%20%C2%B7%204%20Pipelines-6366f1?style=for-the-badge)](https://github.com/FreeFades2Black/platform-flight-simulator)
+[![Defense Capability](https://img.shields.io/badge/Defense-All--Domain%20Operations-10b981?style=for-the-badge)](docs/MISSION_TECHNOLOGIES_CAPABILITY.md)
 [![Taxonomy](https://img.shields.io/badge/Taxonomy-18%20Failure%20Modes-ef4444?style=for-the-badge)](https://github.com/FreeFades2Black/platform-flight-simulator#triage--failure-modes-taxonomy)
 
-> An interactive, scenario-driven **Platform Flight Simulator** and guided digital twin sandbox. Instead of passive markdown runbooks, engineers learn by stepping through live state machines, watching real-time packet and buffer flows, intentionally injecting chaos, and executing real Linux/Kubernetes triage commands to remediate complex production incidents.
+> **High-Fidelity Digital Twin for Stress-Testing Disconnected, Intermittent, and Edge-to-Core Ingestion Pipelines across Multi-Tenant Defense Clusters.**  
+> An interactive, scenario-driven digital twin sandbox modeling cross-layer failure dynamics across CNI overlay networks, Linux kernel cgroup executioners, and distributed persistent storage controllers under tactical-edge conditions.
+
+---
+
+## 🌐 Mission Context: High-Reliability Data Fabric for All-Domain Dominance
+
+Modern multi-domain systems—spanning un-crewed surface/undersea vehicles (USVs/UUVs), tactical EW sensors, and remote radar nodes—rely on continuous telemetry streams across degraded WAN environments. 
+
+Standard cloud tooling assumes stable connectivity, ample memory, and clean tear-downs. In contested, tactical-edge environments, those assumptions fail:
+* **Network frames drop silently** over encrypted overlay tunnels when MTUs mismatch across tactical radio/SATCOM links.
+* **High-frequency sensor bursts** saturate user-space memory, triggering hard kernel cgroup reapers without application logs.
+* **Flapping nodes and host panics** deadlock persistent storage attachments, stalling mission-critical analytics.
+
+The **Platform Flight Simulator** serves as a digital twin and failure injection testbed that deterministically reproduces, diagnoses, and automates recovery across the entire sensor-to-lakehouse pipeline.
+
+### 🎯 Technical Scenarios Mapped to Defense & Tactical Edge Domains
+
+| Core Simulation Scenario | Technical Mechanism | Defense & Operational Mission Context |
+| :--- | :--- | :--- |
+| **01: The Wire Trap** | CNI overlay MTU 1550B vs. 1500B physical wire with `DF=1` | **Tactical WAN & Cross-Domain Comms:** Forward-deployed sensor forwarders push encrypted batch bursts over tactical SATCOM/radio bridges. Miscalculated encapsulation headers drop intelligence feeds without TCP RST notifications. |
+| **02: The Invisible Reaper** | Netty off-heap DirectByteBuffer breaching cgroup v2 ($137$) | **High-Density Sensor Telemetry:** Real-time EW/RF signal processing pods ingest multi-gigabit bursts. Off-heap native memory bypasses runtime garbage collection, triggering kernel termination without application logs. |
+| **03: The Frozen Disk** | Ungraceful node panic leaving SCSI-3 volume locks | **Contested Edge Node Survivability:** A tactical server node suffers sudden power disruption or battle damage. Automated fencing (NHC/SNR) with native out-of-service taints forces storage detachment and reschedules processing in <90 seconds. |
+| **04: Storage Stall & RO Mount** | JBD2 journal abort & filesystem remount read-only | **Ruggedized Edge Storage Integrity:** SAN/NVMe latency spikes during write-heavy surveillance recording cause the kernel to remount storage read-only, requiring storage-aware readiness health checks. |
 
 ---
 
@@ -58,7 +82,8 @@
 
 This taxonomy organizes the 18 primary failure modes across modern cloud-native data ingestion pipelines.
 
-> 📖 **Comprehensive Operational References:**
+> 📖 **Comprehensive Operational & Defense References:**
+> * **Defense Mission Technologies Capability:** [docs/MISSION_TECHNOLOGIES_CAPABILITY.md](docs/MISSION_TECHNOLOGIES_CAPABILITY.md) *(All-Domain Operations, Tactical Edge, Multi-Cluster Survivability, and Zero-Data-Loss Ingestion)*
 > * **Exhaustive 18-Scenario Runbook:** [docs/COMPLETE_FAILURE_TAXONOMY_RUNBOOK.md](docs/COMPLETE_FAILURE_TAXONOMY_RUNBOOK.md) *(Full failure physics, log snippets, step-by-step CLI commands, and verification for all 18 scenarios)*
 > * **Operational Resilience & Architecture Guide:** [docs/OPERATIONAL_RESILIENCE_GUIDE.md](docs/OPERATIONAL_RESILIENCE_GUIDE.md) *(Cross-layer diagnostics, kernel cgroups, and automated node remediation architecture)*
 > * **Cross-Layer Debugging Article:** [docs/cross_layer_debugging_mechanics.md](docs/cross_layer_debugging_mechanics.md) *(Where Standard Telemetry Lies: Deep dive across CNI MTU, JVM off-heap, and CSI storage deadlocks)*
