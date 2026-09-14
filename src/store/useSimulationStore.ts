@@ -189,10 +189,10 @@ export const SCENARIOS: Record<FailureScenarioId, FailureScenarioInfo> = {
     componentName: 'Pipeline 4 → 5: KAFKA BROKER to CSI VOLUME',
     componentType: 'pipeline',
     title: 'Exclusive Lock Contention (Multi-Attach Error)',
-    errorSignature: 'FailedAttachVolume: VolumeAttachment is already attached to node-b-storage-az1',
-    description: 'Node B crashed while holding an exclusive ReadWriteOnce AWS EBS / CSI volume lock. Replacement broker pod on Node C hangs in ContainerCreating indefinitely.',
-    suggestedCommands: ['kubectl describe pod kafka-broker-0-replacement', 'kubectl get volumeattachment', 'unlock-storage'],
-    remediationCommand: 'unlock-storage',
+    errorSignature: 'FailedAttachVolume: VolumeAttachment is already attached to site22-worker-03',
+    description: 'Worker node crashed while holding an exclusive ReadWriteOnce AWS EBS / CSI volume lock. Replacement broker pod hangs in ContainerCreating until ungraceful shutdown taint or VolumeAttachment prune.',
+    suggestedCommands: ['kubectl describe pod kafka-broker-2', 'kubectl get volumeattachment', 'apply-snr-fencing', 'unlock-storage'],
+    remediationCommand: 'apply-snr-fencing',
   },
   'pipe4-csi-grpc-timeout': {
     id: 'pipe4-csi-grpc-timeout',
@@ -699,15 +699,37 @@ ISR restored: 3/3 in-sync. UnderReplicatedPartitions: 0!`;
     // Pipeline 4: Multi-Attach Lock
     if (activeScenario === 'pipe4-multi-attach-lock') {
       if (trimmed.includes('describe pod') || trimmed.includes('volumeattachment')) {
-        return `Warning  FailedAttachVolume  Multi-Attach error for volume "pvc-telemetry-0"
-Volume is already exclusively attached to one node (node-b-storage-az1) and cannot be attached to node-c-compute-az1.
+        return `Warning  FailedAttachVolume  11m (x8 over 12m)  attachdetach-controller
+Multi-Attach error for volume "pvc-data-kafka-broker-2": Volume is already exclusively attached to site22-worker-03 and cannot be attached to site22-worker-05.
 kubectl get volumeattachment:
-csi-ebs-vol-08f12a38b19283f   node-b-storage-az1   true   12m`;
+csi-ebs-vol-08f12a38b19283f   site22-worker-03   true   12m`;
+      }
+      if (trimmed.includes('openshift-workload-availability') || trimmed.includes('get pods -n')) {
+        return `NAME                                                READY   STATUS    RESTARTS   AGE
+node-healthcheck-controller-manager-6b8c9d-f2x4a    1/1     Running   0          4m
+self-node-remediation-controller-manager-7c4b-8m9q  1/1     Running   0          4m`;
+      }
+      if (trimmed.includes('jsonpath') || trimmed.includes('taints')) {
+        return `[
+  {
+    "effect": "NoExecute",
+    "key": "node.kubernetes.io/out-of-service",
+    "value": "nodeshutdown"
+  }
+]`;
+      }
+      if (trimmed === 'apply-snr-fencing' || trimmed.includes('automated-node-fencing') || trimmed.includes('apply -k') || trimmed === 'auto-fence') {
+        get().resolveActiveFailure();
+        return `[+] Deployed NodeHealthCheck & SelfNodeRemediation Operator pipeline.
+[+] NHC detected site22-worker-03 in Ready: Unknown / NotReady (T+60s).
+[+] SNR Controller applied native taint: node.kubernetes.io/out-of-service=nodeshutdown:NoExecute.
+[+] attachdetach-controller recognized out-of-service taint -> Stale VolumeAttachment deleted.
+[+] Volume attached to site22-worker-05. kafka-broker-2 entered Running state!`;
       }
       if (trimmed === 'unlock-storage' || trimmed.includes('delete volumeattachment')) {
         get().resolveActiveFailure();
-        return `[+] Stale VolumeAttachment for node-b-storage-az1 pruned from API server.
-CSI driver attached volume to node-c. Replacement broker entered Running state!`;
+        return `[+] Stale VolumeAttachment for site22-worker-03 pruned from API server.
+CSI driver attached volume to site22-worker-05. Replacement broker entered Running state!`;
       }
     }
 

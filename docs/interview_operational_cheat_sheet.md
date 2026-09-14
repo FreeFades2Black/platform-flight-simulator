@@ -36,13 +36,25 @@ Wire / MTU (L2/L3) -> Ingress & CNI (L4/L7) -> Linux Kernel & cgroups -> Process
 ## 3. Pipeline 4 (CSI Multi-Attach Lock & Storage Deadlocks)
 - **The Mechanism:** 
   - Pod uses PersistentVolumeClaim backed by ReadWriteOnce block storage (AWS EBS, Ceph RBD, NVMe-oF).
-  - Node A crashes abruptly; kernel unmount sequence does not execute.
+  - Node A (`site22-worker-03`) crashes abruptly; kernel unmount sequence does not execute.
   - Cloud / SAN storage controller maintains exclusive SCSI-3 reservation lock assigned to Node A.
-- **The Failure:** Replacement pod scheduled to Node B attempts to attach disk. Storage provider rejects request to prevent multi-writer filesystem corruption. Pod hangs in `ContainerCreating`.
+- **The Failure:** Replacement pod scheduled to Node B (`site22-worker-05`) attempts to attach disk. Storage provider rejects request to prevent multi-writer filesystem corruption. Pod hangs in `ContainerCreating` for 10+ minutes.
 - **Triage Commands:**
-  - `kubectl describe pod kafka-broker-0` -> Look for `FailedAttachVolume: VolumeAttachment ... is already attached to node <node-a>`.
+  - `kubectl describe pod kafka-broker-2 -n lakehouse-platform` -> Look for `FailedAttachVolume: VolumeAttachment ... is already attached to node site22-worker-03`.
   - `kubectl get volumeattachments` -> Identify stale VolumeAttachment resource tied to the crashed host.
-- **Remediation:** Confirm Node A is offline/isolated, then prune the stale VolumeAttachment object or force detachment via storage CLI/CSI driver.
+- **Manual Remediation:** Confirm Node A is offline/isolated, then prune the stale VolumeAttachment object:
+  `kubectl delete volumeattachment <name> --force --grace-period=0`
+- **Enterprise Automated Remediation (NHC + SNR Operator Pipeline):**
+  - **Node Health Check (NHC) Operator:** Watches worker nodes. When a node stays `Ready: Unknown` or `Ready: False` for 60s, it invokes `SelfNodeRemediationTemplate`.
+  - **Self-Node Remediation (SNR) Operator:** Fences the dead host via hardware watchdog (`/dev/watchdog`) and automatically applies the native taint:
+    ```yaml
+    spec:
+      taints:
+        - key: node.kubernetes.io/out-of-service
+          value: "nodeshutdown"
+          effect: NoExecute
+    ```
+  - **Control Plane Reconciliation:** The Kubernetes `attachdetach-controller` recognizes the `out-of-service` taint, terminates hung pods, and immediately deletes the blocking `VolumeAttachment` API object without requiring human SRE intervention.
 
 ---
 

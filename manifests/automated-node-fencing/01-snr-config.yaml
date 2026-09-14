@@ -1,0 +1,15 @@
+apiVersion: self-node-remediation.medik8s.io/v1alpha1
+kind: SelfNodeRemediationConfig
+metadata:
+  name: self-node-remediation-config
+  namespace: openshift-workload-availability
+spec:
+  # Instructs SNR to apply native Kubernetes out-of-service taint on ungraceful shutdown
+  remediationStrategy: OutOfServiceTaint
+  
+  # Time (in seconds) the agent waits for healthy peer communication before hardware watchdog reboot
+  peerApiServerTimeout: 15s
+  peerRequestRetries: 3
+  
+  # Watchdog device on bare-metal hosts (e.g., /dev/watchdog)
+  watchdogFilePath: /dev/watchdog

@@ -1,0 +1,29 @@
+apiVersion: remediation.medik8s.io/v1alpha1
+kind: NodeHealthCheck
+metadata:
+  name: worker-node-healthcheck
+  namespace: openshift-workload-availability
+spec:
+  # Target all data plane worker nodes running stateful lakehouse workloads
+  selector:
+    matchLabels:
+      node-role.kubernetes.io/worker: ""
+
+  # Halt remediation if too many nodes drop concurrently (prevents cluster-wide cascading teardowns)
+  minHealthy: 60%
+
+  # Criteria to declare a node dead
+  unhealthyConditions:
+    - type: Ready
+      status: "False"
+      duration: 60s
+    - type: Ready
+      status: "Unknown"
+      duration: 60s
+
+  # Remediation controller reference
+  remediationTemplate:
+    apiVersion: self-node-remediation.medik8s.io/v1alpha1
+    kind: SelfNodeRemediationTemplate
+    name: self-node-remediation-template
+    namespace: openshift-workload-availability
