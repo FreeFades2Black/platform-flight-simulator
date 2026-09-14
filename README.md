@@ -43,7 +43,12 @@
 
 ## 📋 Triage & Failure Modes Taxonomy (18 Scenarios)
 
-This taxonomy organizes the 18 primary failure modes across modern cloud-native data ingestion pipelines. Each scenario includes authentic kernel, container runtime, and Kubernetes log signatures alongside deterministic triage and remediation playbooks:
+This taxonomy organizes the 18 primary failure modes across modern cloud-native data ingestion pipelines.
+
+> 📖 **Comprehensive Documentation References:**
+> * **Exhaustive 18-Scenario Runbook:** [docs/COMPLETE_FAILURE_TAXONOMY_RUNBOOK.md](docs/COMPLETE_FAILURE_TAXONOMY_RUNBOOK.md) *(Full failure physics, log snippets, step-by-step CLI commands, and verification for all 18 scenarios)*
+> * **Terminal CLI Cheat Sheet:** [docs/interview_operational_cheat_sheet.md](docs/interview_operational_cheat_sheet.md) *(Formatted for terminal review via nano/less across all 9 topology stages)*
+> * **Technical Interview Whiteboard Strategy:** [docs/INTERVIEW_DEMO_STRATEGY.md](docs/INTERVIEW_DEMO_STRATEGY.md) *(Scripted talking points and live demonstration walkthrough)* Each scenario includes authentic kernel, container runtime, and Kubernetes log signatures alongside deterministic triage and remediation playbooks:
 
 | Topology Component | Failure Mode | Authentic Error Signature / Kernel Log | Triage & Remediation Command |
 | :--- | :--- | :--- | :--- |
