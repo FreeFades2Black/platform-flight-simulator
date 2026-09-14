@@ -102,6 +102,35 @@ When the interviewer asks:
 
 ---
 
+### Tier 4: The Frozen Disk (Node 5: Kernel Block Stall & EXT4 Read-Only Remount)
+* **The Concept:** Why a pod reports `Running` and passes TCP health checks while completely rejecting writes with `KafkaStorageException: Read-only file system`.
+* **The Architecture:**
+  ```
+  [ Ingest Burst Writes ] ──► [ Block Device I/O Timeout ]
+                                          │
+                                          ▼
+                      [ JBD2 Journal Transaction Times Out ]
+                                          │
+                                          ▼
+                      [ EXT4 errors=remount-ro Policy Triggers ]
+                                          │
+                                          ▼
+                [ Linux Kernel Flips Superblock to READ-ONLY (ro) ]
+  ```
+* **The Senior Insight:**
+  > *"When underlying SAN or cloud block volume latency spikes beyond kernel I/O timeouts, the EXT4 journaling layer (JBD2) aborts to prevent metadata corruption. The kernel immediately executes its configured error policy (`errors=remount-ro`), flipping the filesystem read-only.
+  >
+  > A junior admin might try `mount -o remount,rw`, which corrupts the un-replayed journal and destroys partition data. A senior engineer recognizes that the pod must be scaled down to close all file handles, `fsck.ext4 -fy` executed on the unmounted block device to replay the journal and fix allocation bitmaps, and the pod scaled back up. Furthermore, the Kubernetes readiness probe must be hardened to check disk writeability (`touch /var/lib/kafka/data/.healthz`), so the pod is instantly removed from Service endpoints if storage locks."*
+* **Simulator Triage in Terminal:**
+  ```bash
+  $ dmesg -T | grep -E -i 'ext4|remount'
+  [19482.019342] EXT4-fs (device rbd0): Remounting filesystem read-only
+  $ fsck-remount-rw
+  [+] Unmounted volume, executed fsck.ext4 -y /dev/rbd0 (journal replayed, 0 bad blocks), and remounted read-write.
+  ```
+
+---
+
 ## 4. Alignment Matrix: Enlighten Job Description vs Simulator Implementation
 
 | Job Requirement from Enlighten JD | What You Built in the Simulator to Prove It | Interview Validation Point |

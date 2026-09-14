@@ -58,14 +58,25 @@ Wire / MTU (L2/L3) -> Ingress & CNI (L4/L7) -> Linux Kernel & cgroups -> Process
 
 ---
 
-## 4. Node 5 (Kernel Disk I/O Stall & Filesystem Remount)
-- **The Mechanism:** Under heavy write pressure or SAN link latency spikes, block write acknowledgments exceed the Linux SCSI/block layer timeout threshold.
-- **The Failure:** Linux kernel detects block device timeouts or orphaned inode references. To prevent filesystem metadata corruption, the kernel remounts the mount point as read-only (`ro`).
+## 4. Node 5 (Kernel Disk I/O Stall & EXT4 Read-Only Remount)
+- **The Mechanism:** 
+  - Heavy telemetry write velocity causes SAN / Ceph RBD / AWS EBS link latency to exceed the Linux kernel block I/O timeout threshold (`blk_update_request: I/O error`).
+  - EXT4 Journaling Block Device (**JBD2**) detects an aborted metadata transaction commit (`JBD2: Detected aborted journal`).
+  - Kernel safety trigger: Standard EXT4 partitions mount with `errors=remount-ro`. To prevent catastrophic filesystem corruption and loss of directory bitmaps, the Linux kernel emergency-remounts the superblock as read-only (`ro`).
+- **The Operational Trap:** 
+  - Kubernetes readiness probes checking superficial TCP port 9092 continue passing because the Java process is alive in memory.
+  - Pod reports `Running`, but all disk append syscalls fail with `KafkaStorageException: Read-only file system` (`EROFS`).
 - **Triage Commands:**
-  - `dmesg -T | grep -E 'EXT4-fs|XFS'` -> Look for `Remounting filesystem read-only`.
-  - `mount | grep '/var/lib/kafka'` -> Verify if mount flags shifted from `rw` to `ro`.
-  - `df -i /var/lib/kafka/data` -> Check for inode exhaustion (100% inode utilization causes ENOSPC even with free disk space).
-- **Remediation:** Run filesystem check (`fsck`) on detached device, verify SAN path latency, and remount read-write.
+  - `mount | grep '/var/lib/kafka'` -> Confirm mount flags shifted from `rw` to `ro,relatime,errors=remount-ro`.
+  - `dmesg -T | grep -E -i 'ext4|jbd2|remount|i/o error'` -> Look for `EXT4-fs error ... Remounting filesystem read-only`.
+  - `df -ih /var/lib/kafka/data` -> Verify inode table is not at 100% saturation.
+- **Remediation Procedure (Never Remount rw Directly on an Aborted Journal):**
+  1. Cordon host node: `kubectl cordon site41-worker-02`
+  2. Scale down StatefulSet to release open file handles: `kubectl scale statefulset kafka-broker --replicas=2 -n lakehouse-platform`
+  3. Replay JBD2 journal and repair block bitmaps on detached volume: `fsck.ext4 -fy /dev/rbd0`
+  4. Scale StatefulSet back up: `kubectl scale statefulset kafka-broker --replicas=3 -n lakehouse-platform`
+  5. Uncordon host: `kubectl uncordon site41-worker-02`
+  6. Harden readiness probe to verify filesystem writeability: `touch /var/lib/kafka/data/.healthz && rm -f /var/lib/kafka/data/.healthz`.
 
 ---
 

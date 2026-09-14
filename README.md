@@ -91,6 +91,62 @@ When interviewing for Senior Platform Delivery & Reliability roles, this simulat
 
 ---
 
+---
+
+## 🚨 Field Triage Case Studies: The SRE Production Trilogy
+
+These three documented production incidents demonstrate root-cause isolation across the physical wire, Linux kernel cgroups, and storage controllers:
+
+### Incident 01 (INC-409): Ungraceful Node Shutdown & CSI Multi-Attach Deadlock
+* **Site:** `site-22-socom-airgap` | **Alert:** `KafkaIngestLagSpike`
+* **Symptoms:** Node `site22-worker-03` crashed with a kernel panic. The scheduler spun up `kafka-broker-2` on `site22-worker-05`, but the pod remained frozen in `ContainerCreating` for 12+ minutes. Field ops executed `kubectl delete pod` to reset it, causing the pod to freeze in `Terminating`.
+* **The Kernel/CSI Mechanics:** The dead node's kubelet died instantly without executing the container stop, filesystem unmount, or volume detach lifecycle hooks. The cloud storage controller (AWS EBS, Ceph RBD) maintained an exclusive `ReadWriteOnce` SCSI-3 reservation lock. The `attachdetach-controller` refused attachment to prevent dual-writer filesystem corruption. Deleting the pod only appended a `deletionTimestamp` without releasing the lock.
+* **Triage & Remediation:**
+  ```bash
+  # 1. Verify multi-attach error event
+  kubectl describe pod kafka-broker-2 -n lakehouse-platform
+  # 2. Identify the stale lock
+  kubectl get volumeattachments | grep site22-worker-03
+  # 3. Automated Resolution (NHC + SNR Operator Pipeline):
+  # Self-Node Remediation fences the node and applies the native taint:
+  # node.kubernetes.io/out-of-service=nodeshutdown:NoExecute
+  # attachdetach-controller reconciles and force-detaches the volume at T+60s automatically.
+  ```
+
+---
+
+### Incident 02 (INC-410): The Invisible Reaper — cgroup v2 OOM vs. JVM DirectByteBuffer
+* **Site:** `site-08-gov-east` | **Alert:** `KafkaBrokerCrashLooping`
+* **Symptoms:** Broker 0 crashed repeatedly during the morning telemetry burst, running for 90 seconds before abruptly vanishing. `server.log` contained zero warnings, zero errors, and zero stack traces.
+* **The Kernel/JVM Mechanics:** In Java/OpenJDK, `-XX:MaxDirectMemorySize` defaults to `-Xmx` (6GB) if omitted. Under high telemetry bursts, Netty allocated off-heap direct memory via `ByteBuffer.allocateDirect()` directly from OS RAM for zero-copy socket reads. Heap (6GB) + Direct Memory (1.8GB+) + Metaspace/Thread Stacks exceeded the 8GiB cgroup limit. Because the JVM heap was under 6GB, no `OutOfMemoryError` was thrown; the Linux kernel cgroup monitor tripped and sent a non-catchable **`SIGKILL (Exit Code 137)`**, terminating the process instantly in kernel space.
+* **Triage & Remediation:**
+  ```bash
+  # 1. Confirm kernel assassination in host ring buffer
+  dmesg -T | grep -E -i 'oom|kill|memory cgroup'
+  # Output: Memory cgroup out of memory: Kill process 28412 (java) score 982
+  # 2. Enforce explicit off-heap ceiling in container env:
+  # -Xms4g -Xmx4g -XX:MaxDirectMemorySize=2048m -XX:+ExitOnOutOfMemoryError
+  ```
+
+---
+
+### Incident 03 (INC-411): The Frozen Disk — Kernel Block Stall & EXT4 Read-Only Remount
+* **Site:** `site-41-forward-enclave` | **Alert:** `KafkaProduceRequestFailures`
+* **Symptoms:** Producers failed with `KafkaStorageException: Read-only file system`. The broker container reported `Running` and passed its TCP readiness probe, but touching `/var/lib/kafka/data/test` failed with `Read-only file system`.
+* **The Kernel/Block Layer Mechanics:** Storage network latency exceeded the Linux SCSI block I/O timeout threshold (`blk_update_request: I/O error`). The EXT4 Journaling Block Device (JBD2) detected an aborted journal commit. To protect filesystem metadata against irreversible corruption, the Linux kernel executed its safety policy (**`errors=remount-ro`**), immediately flipping the mounted superblock to Read-Only (`ro`). The process remained in RAM and answered TCP probes, but all segment append syscalls (`pwrite64`) failed with `EROFS`.
+* **Triage & Remediation:**
+  ```bash
+  # 1. Isolate mount flags and aborted journal
+  mount | grep '/var/lib/kafka' # shows (ro,relatime,errors=remount-ro)
+  dmesg -T | grep -E -i 'ext4|jbd2|remount'
+  # 2. DO NOT remount directly on a dirty journal! Unmount first:
+  kubectl scale statefulset kafka-broker --replicas=2 -n lakehouse-platform
+  # 3. Replay journal and repair filesystem bitmaps on host:
+  fsck.ext4 -fy /dev/rbd0
+  # 4. Scale back up and harden readiness probe to verify disk writeability:
+  kubectl scale statefulset kafka-broker --replicas=3 -n lakehouse-platform
+  ```
+
 ## 💼 Job Requirement Alignment Matrix
 
 | Job Requirement (Enlighten Senior Platform Delivery & Reliability) | What Was Built in the Simulator to Prove It |
