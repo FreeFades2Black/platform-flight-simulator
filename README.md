@@ -17,6 +17,19 @@
 
 ---
 
+## 💡 The Senior Platform Architectural Tenets
+
+> ### 🌐 1. The Ingest & Edge Layer
+> *"At line rate, standard tooling hides failures. Synthetic health checks pass because small packets fit within a 1500-byte frame, but high-throughput telemetry batches get dropped at the overlay boundary because VXLAN adds 50 bytes of encapsulation with the DF bit set."*
+>
+> ### ⚙️ 2. The Compute & JVM Boundary
+> *"When high connection counts surge into Kafka, checking server.log yields nothing. OpenJDK defaults -XX:MaxDirectMemorySize to -Xmx, meaning the JVM believes it can consume 12GB inside an 8GB container. The Linux kernel cgroup controller reaps the process with SIGKILL 137 from the outside."*
+>
+> ### 🛡️ 3. The Block Storage & Recovery Plane
+> *"When stateful nodes fail ungracefully, you can't rely on manual kubectl delete commands at 2:00 AM. We automate node fencing via Node Health Check and Self-Node Remediation using the native out-of-service taint to release exclusive SCSI-3 locks automatically, while deploying storage-aware readiness probes so filesystems that flip to read-only fail fast before corrupting partition state."*
+
+---
+
 ## 🏛️ System Topology (5 Nodes · 4 Pipelines)
 
 ```
