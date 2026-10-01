@@ -20,6 +20,7 @@ jobs:
   build-and-test:
     name: Build Next.js Simulator & Verify State Machine
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Checkout Repository
@@ -57,6 +58,7 @@ jobs:
     needs: build-and-test
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
